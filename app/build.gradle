@@ -9,6 +9,7 @@ android {
     namespace "de.danoeh.antennapod"
 
     defaultConfig {
+        applicationId "se.sndc.musikpaus"
         // Version code schema:
         // "1.2.3-beta4"    -> 1020304
         // "1.2.3"          -> 1020395
@@ -30,10 +31,10 @@ android {
     buildTypes {
         debug {
             applicationIdSuffix ".debug"
-            resValue "string", "provider_authority", "de.danoeh.antennapod.debug.provider"
+            resValue "string", "provider_authority", "se.sndc.musikpaus.debug.provider"
         }
         release {
-            resValue "string", "provider_authority", "de.danoeh.antennapod.provider"
+            resValue "string", "provider_authority", "se.sndc.musikpaus.provider"
             minifyEnabled true
             shrinkResources true
             signingConfig signingConfigs.releaseConfig
