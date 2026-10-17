@@ -50,6 +50,7 @@ import de.danoeh.antennapod.playback.base.RewindAfterPauseUtils;
 import de.danoeh.antennapod.playback.cast.CastPlayerWrapper;
 import de.danoeh.antennapod.playback.service.internal.ExoPlayerUtils;
 import de.danoeh.antennapod.playback.service.internal.MediaLibrarySessionCallback;
+import de.danoeh.antennapod.playback.service.internal.MusicBreak;
 import de.danoeh.antennapod.playback.service.internal.PlayableUtils;
 import de.danoeh.antennapod.playback.service.internal.SkipUtils;
 import de.danoeh.antennapod.playback.service.internal.SleepTimer;
@@ -98,6 +99,7 @@ public class Media3PlaybackService extends MediaLibraryService {
     private int playbackStartPosition = -1;
     private int playedDurationCountedUntil = -1;
     private SleepTimer sleepTimer;
+    private MusicBreak musicBreak;
     @Nullable
     private LoudnessEnhancer loudnessEnhancer = null;
     private float volumeAdaptionFactor = 1.0f;
@@ -148,6 +150,9 @@ public class Media3PlaybackService extends MediaLibraryService {
 
             @Override
             public void play() {
+                if (musicBreak.isActive()) {
+                    musicBreak.cancel();
+                }
                 if (handleStreamingConfirmation()) {
                     return;
                 } else if (shouldBlockForStreamingConfirmation()) {
@@ -253,6 +258,7 @@ public class Media3PlaybackService extends MediaLibraryService {
                         new PlaybackPositionEvent((int) positionMs, (int) player.getDuration()));
             }
         };
+        musicBreak = new MusicBreak(this, player);
         player.addListener(playerListener);
         mediaSession = new MediaLibraryService.MediaLibrarySession.Builder(this, player, sessionCallback)
                 .setSessionActivity(new MainActivityStarter(this).withOpenPlayer().getPendingIntent())
@@ -472,6 +478,9 @@ public class Media3PlaybackService extends MediaLibraryService {
     public void onDestroy() {
         PlaybackService.isRunning = false;
         cancelPositionObserver();
+        if (musicBreak != null) {
+            musicBreak.release();
+        }
         if (sleepTimer != null) {
             sleepTimer.stop();
             sleepTimer = null;
@@ -532,6 +541,7 @@ public class Media3PlaybackService extends MediaLibraryService {
                                 if (SkipUtils.skipEndingIfNecessary(this, currentPlayable, position, duration, speed)) {
                                     player.seekTo(player.getDuration());
                                 }
+                                musicBreak.onPlaybackTick(currentPlayable);
                             }
                         }, error -> Log.e(TAG, "Position observer error", error));
     }

@@ -92,4 +92,30 @@
                 android:summary="@string/pref_skip_keeps_episodes_sum"
                 android:title="@string/pref_skip_keeps_episodes_title"/>
     </PreferenceCategory>
+
+    <PreferenceCategory android:title="@string/music_break">
+        <SwitchPreferenceCompat
+                android:defaultValue="false"
+                android:key="prefMusicBreakEnabled"
+                android:summary="@string/pref_music_break_sum"
+                android:title="@string/music_break"/>
+        <de.danoeh.antennapod.ui.preferences.preference.MaterialListPreference
+                android:defaultValue="10"
+                android:dependency="prefMusicBreakEnabled"
+                android:entries="@array/music_break_interval_values"
+                android:entryValues="@array/music_break_interval_values"
+                android:key="prefMusicBreakInterval"
+                android:title="@string/pref_music_break_interval_title"/>
+        <de.danoeh.antennapod.ui.preferences.preference.MaterialListPreference
+                android:defaultValue="folders"
+                android:dependency="prefMusicBreakEnabled"
+                android:entries="@array/music_break_source_options"
+                android:entryValues="@array/music_break_source_values"
+                android:key="prefMusicBreakSource"
+                android:title="@string/pref_music_break_source_title"/>
+        <Preference
+                android:dependency="prefMusicBreakEnabled"
+                android:key="prefMusicBreakFoldersLauncher"
+                android:title="@string/pref_music_break_folders_title"/>
+    </PreferenceCategory>
 </PreferenceScreen>

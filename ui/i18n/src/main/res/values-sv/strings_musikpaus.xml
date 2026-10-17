@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="music_break">Musikpauser</string>
+    <string name="pref_music_break_sum">Pausa avsnittet då och då och spela en slumpad låt från enheten</string>
+    <string name="pref_music_break_interval_title">Intervall</string>
+    <string name="pref_music_break_interval_sum">Efter %1$s lyssning</string>
+    <string name="pref_music_break_source_title">Musikkälla</string>
+    <string name="music_break_source_all">All musik på enheten</string>
+    <string name="music_break_source_folders">Valda mappar</string>
+    <string name="pref_music_break_folders_title">Musikmappar</string>
+    <string name="pref_music_break_folders_none">Inga mappar valda</string>
+    <string name="music_break_add_folder">Lägg till mapp</string>
+    <string name="music_break_permission_denied">Åtkomst till musik nekades</string>
+</resources>
