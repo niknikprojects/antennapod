@@ -1,3 +1,17 @@
+> [!NOTE]
+> **Personal fork.** This is upstream AntennaPod with one addition: *music breaks*. Every now and
+> then the episode pauses at a natural spot (chapter start or a pause in speech), a random music
+> track from the device plays, and the episode continues (Settings → Playback → Music breaks).
+> It installs next to regular AntennaPod as `se.sndc.musikpaus`. The changes live on the
+> `musikpaus` branch, modified from AntennaPod `develop` since 2026-10-17, and stay under GPL-3.0.
+> Not affiliated with the AntennaPod project — get the official app from the links below.
+
+<br>
+
+---
+
+<br>
+
 # AntennaPod
 
 [![GitHub check runs](https://img.shields.io/github/actions/workflow/status/AntennaPod/AntennaPod/checks.yml?branch=develop)](https://github.com/AntennaPod/AntennaPod/actions/workflows/checks.yml?query=branch%3Adevelop)
