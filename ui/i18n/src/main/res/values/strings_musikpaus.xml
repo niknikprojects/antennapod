@@ -3,7 +3,7 @@
     <string name="music_break">Music breaks</string>
     <string name="pref_music_break_sum">Now and then, pause the episode and play a random music track from the device</string>
     <string name="pref_music_break_interval_title">Interval</string>
-    <string name="pref_music_break_interval_sum">After %1$s of listening</string>
+    <string name="pref_music_break_interval_sum">About every %1$s, preferably at a chapter start, and between episodes</string>
     <string name="pref_music_break_source_title">Music source</string>
     <string name="music_break_source_all">All music on the device</string>
     <string name="music_break_source_folders">Selected folders</string>

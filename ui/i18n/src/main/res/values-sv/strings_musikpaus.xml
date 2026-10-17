@@ -3,7 +3,7 @@
     <string name="music_break">Musikpauser</string>
     <string name="pref_music_break_sum">Pausa avsnittet då och då och spela en slumpad låt från enheten</string>
     <string name="pref_music_break_interval_title">Intervall</string>
-    <string name="pref_music_break_interval_sum">Efter %1$s lyssning</string>
+    <string name="pref_music_break_interval_sum">Ungefär var %1$s, helst vid ett kapitelbyte, och mellan avsnitt</string>
     <string name="pref_music_break_source_title">Musikkälla</string>
     <string name="music_break_source_all">All musik på enheten</string>
     <string name="music_break_source_folders">Valda mappar</string>

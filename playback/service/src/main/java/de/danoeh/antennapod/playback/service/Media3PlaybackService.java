@@ -870,7 +870,9 @@ public class Media3PlaybackService extends MediaLibraryService {
                                 return;
                             }
                             switchToPlayable(nextMedia);
-                            player.setPlayWhenReady(UserPreferences.isFollowQueue());
+                            boolean musicBreakFirst = ended && UserPreferences.isFollowQueue()
+                                    && musicBreak.startBetweenEpisodes(nextMedia);
+                            player.setPlayWhenReady(UserPreferences.isFollowQueue() && !musicBreakFirst);
                             player.setMediaItem(nextMediaItem, SkipUtils.skipIntroIfNecessary(this, nextMedia));
                             player.prepare();
                         },
