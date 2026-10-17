@@ -51,6 +51,7 @@ import de.danoeh.antennapod.playback.cast.CastPlayerWrapper;
 import de.danoeh.antennapod.playback.service.internal.ExoPlayerUtils;
 import de.danoeh.antennapod.playback.service.internal.MediaLibrarySessionCallback;
 import de.danoeh.antennapod.playback.service.internal.MusicBreak;
+import de.danoeh.antennapod.playback.service.internal.MusicBreakSessionPlayer;
 import de.danoeh.antennapod.playback.service.internal.PlayableUtils;
 import de.danoeh.antennapod.playback.service.internal.SkipUtils;
 import de.danoeh.antennapod.playback.service.internal.SleepTimer;
@@ -260,7 +261,8 @@ public class Media3PlaybackService extends MediaLibraryService {
         };
         musicBreak = new MusicBreak(this, player);
         player.addListener(playerListener);
-        mediaSession = new MediaLibraryService.MediaLibrarySession.Builder(this, player, sessionCallback)
+        mediaSession = new MediaLibraryService.MediaLibrarySession.Builder(this,
+                        new MusicBreakSessionPlayer(player, musicBreak), sessionCallback)
                 .setSessionActivity(new MainActivityStarter(this).withOpenPlayer().getPendingIntent())
                 .build();
         if (isCasting()) {
@@ -446,6 +448,7 @@ public class Media3PlaybackService extends MediaLibraryService {
 
         @Override
         public void onMediaItemTransition(@Nullable MediaItem mediaItem, int reason) {
+            musicBreak.cancel();
             if (mediaItem == null) {
                 if (currentPlayable != null
                         && CastPlayerWrapper.hasPlaybackJustFinished(Media3PlaybackService.this)) {
@@ -871,10 +874,13 @@ public class Media3PlaybackService extends MediaLibraryService {
                             }
                             switchToPlayable(nextMedia);
                             boolean musicBreakFirst = ended && UserPreferences.isFollowQueue()
-                                    && musicBreak.startBetweenEpisodes(nextMedia);
+                                    && musicBreak.canBreak(nextMedia);
                             player.setPlayWhenReady(UserPreferences.isFollowQueue() && !musicBreakFirst);
                             player.setMediaItem(nextMediaItem, SkipUtils.skipIntroIfNecessary(this, nextMedia));
                             player.prepare();
+                            if (musicBreakFirst) {
+                                musicBreak.startBetweenEpisodes();
+                            }
                         },
                         error -> Log.e(TAG, "Failed to load next queue item", error),
                         () -> {

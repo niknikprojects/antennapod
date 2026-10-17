@@ -60,6 +60,7 @@ import de.danoeh.antennapod.event.FeedItemEvent;
 import de.danoeh.antennapod.event.PlayerErrorEvent;
 import de.danoeh.antennapod.event.PlayerStatusEvent;
 import de.danoeh.antennapod.event.playback.BufferUpdateEvent;
+import de.danoeh.antennapod.event.playback.MusicBreakEvent;
 import de.danoeh.antennapod.event.playback.PlaybackPositionEvent;
 import de.danoeh.antennapod.event.playback.PlaybackServiceEvent;
 import de.danoeh.antennapod.event.playback.SleepTimerUpdatedEvent;
@@ -103,6 +104,7 @@ public class AudioPlayerFragment extends Fragment implements
     private TextView txtvSeek;
 
     private FeedMedia currentMedia;
+    private MusicBreakEvent musicBreak;
     private Disposable disposable;
     private boolean showTimeLeft;
     private boolean seekedToChapterStart = false;
@@ -211,6 +213,17 @@ public class AudioPlayerFragment extends Fragment implements
             return true;
         });
         butPlay.setOnClickListener(v -> {
+            if (musicBreak != null) {
+                boolean musicPlaying = musicBreak.isPlaying();
+                PlaybackController.bindToMedia3Service(getContext(), controller -> {
+                    if (musicPlaying) {
+                        controller.pause();
+                    } else {
+                        controller.play();
+                    }
+                });
+                return;
+            }
             if (PlaybackService.isRunning
                     && PlaybackPreferences.getCurrentPlayerStatus() == PlaybackPreferences.PLAYER_STATUS_PLAYING) {
                 if (BuildConfig.USE_MEDIA3_PLAYBACK_SERVICE) {
@@ -335,6 +348,37 @@ public class AudioPlayerFragment extends Fragment implements
         boolean isPlaying = PlaybackService.isRunning
                 && PlaybackPreferences.getCurrentPlayerStatus() == PlaybackPreferences.PLAYER_STATUS_PLAYING;
         butPlay.setIsShowPlay(!isPlaying);
+        if (musicBreak != null) {
+            showMusicBreak();
+        }
+    }
+
+    @Subscribe(sticky = true, threadMode = ThreadMode.MAIN)
+    public void onMusicBreakEvent(MusicBreakEvent event) {
+        boolean wasActive = musicBreak != null;
+        musicBreak = event.isActive() ? event : null;
+        if (musicBreak != null) {
+            showMusicBreak();
+        } else if (wasActive) {
+            sbPosition.setEnabled(true);
+            loadMediaInfo(false);
+        }
+    }
+
+    private void showMusicBreak() {
+        if (txtvPosition == null || txtvLength == null || sbPosition == null) {
+            return;
+        }
+        long position = musicBreak.getPosition();
+        long duration = musicBreak.getDuration();
+        txtvPosition.setText(Converter.getDurationStringLong((int) position));
+        txtvLength.setText(Converter.getDurationStringLong((int) duration));
+        sbPosition.setDividerPos(null);
+        sbPosition.setEnabled(false);
+        if (duration > 0) {
+            sbPosition.setProgress((int) ((float) position / duration * sbPosition.getMax()));
+        }
+        butPlay.setIsShowPlay(!musicBreak.isPlaying());
     }
 
     @Subscribe(threadMode = ThreadMode.MAIN)
@@ -388,6 +432,9 @@ public class AudioPlayerFragment extends Fragment implements
 
     @Subscribe(threadMode = ThreadMode.MAIN)
     public void updatePosition(PlaybackPositionEvent event) {
+        if (musicBreak != null) {
+            return;
+        }
         if (txtvPosition == null || txtvLength == null || sbPosition == null) {
             return;
         }

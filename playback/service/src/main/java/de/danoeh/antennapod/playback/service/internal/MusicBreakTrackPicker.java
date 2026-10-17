@@ -41,7 +41,7 @@ public class MusicBreakTrackPicker {
         String[] projection = {MediaStore.Audio.Media._ID};
         String selection = MediaStore.Audio.Media.IS_MUSIC + " != 0 AND "
                 + MediaStore.Audio.Media.DURATION + " BETWEEN ? AND ?";
-        String[] args = {String.valueOf(MIN_DURATION_MS), String.valueOf(MusicBreak.MAX_BREAK_MS)};
+        String[] args = {String.valueOf(MIN_DURATION_MS), String.valueOf(MusicBreak.MAX_TRACK_MS)};
         try (Cursor cursor = context.getContentResolver().query(collection, projection, selection, args, null)) {
             if (cursor == null) {
                 return result;

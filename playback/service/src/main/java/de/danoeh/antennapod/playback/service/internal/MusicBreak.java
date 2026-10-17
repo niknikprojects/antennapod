@@ -11,18 +11,22 @@ import androidx.media3.common.AudioAttributes;
 import androidx.media3.common.C;
 import androidx.media3.common.DeviceInfo;
 import androidx.media3.common.MediaItem;
+import androidx.media3.common.MediaMetadata;
 import androidx.media3.common.PlaybackException;
 import androidx.media3.common.Player;
 import androidx.media3.exoplayer.ExoPlayer;
+import de.danoeh.antennapod.event.playback.MusicBreakEvent;
 import de.danoeh.antennapod.model.feed.Chapter;
 import de.danoeh.antennapod.model.feed.FeedMedia;
 import de.danoeh.antennapod.model.playback.MediaType;
+import de.danoeh.antennapod.playback.service.R;
 import de.danoeh.antennapod.storage.preferences.MusicBreakPreferences;
 import io.reactivex.rxjava3.android.schedulers.AndroidSchedulers;
 import io.reactivex.rxjava3.core.Maybe;
 import io.reactivex.rxjava3.core.Single;
 import io.reactivex.rxjava3.disposables.Disposable;
 import io.reactivex.rxjava3.schedulers.Schedulers;
+import org.greenrobot.eventbus.EventBus;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -33,11 +37,11 @@ import java.util.concurrent.TimeUnit;
  * music track between them, preferably at a chapter start near each break point, otherwise in
  * a pause of the speaker found by decoding the surroundings of the break point in advance.
  * The end of an episode counts as a break when the next episode starts automatically.
- * Media3 keeps the service in foreground for 10 minutes after pausing, so a break never lasts longer than 9.
  */
 public class MusicBreak {
     private static final String TAG = "MusicBreak";
-    public static final long MAX_BREAK_MS = TimeUnit.MINUTES.toMillis(9);
+    public static final long MAX_TRACK_MS = TimeUnit.MINUTES.toMillis(10);
+    private static final long PROGRESS_UPDATE_MS = 500;
     private static final long MAX_WINDOW_MS = TimeUnit.MINUTES.toMillis(2);
     private static final long MIN_LEAD_MS = TimeUnit.MINUTES.toMillis(1);
     private static final long CHAPTER_TOLERANCE_MS = 2000;
@@ -50,7 +54,7 @@ public class MusicBreak {
     private final Context context;
     private final Player episodePlayer;
     private final Handler handler = new Handler(Looper.getMainLooper());
-    private final Runnable maxDurationReached = () -> finish(true);
+    private final Runnable progressUpdate = this::updateProgress;
     private final Runnable silenceCheck = this::checkSilenceTarget;
     private final List<Long> breakPoints = new ArrayList<>();
     private long plannedMediaId = -1;
@@ -70,6 +74,14 @@ public class MusicBreak {
     private List<SilenceScanner.Silence> silences = new ArrayList<>();
     @Nullable
     private SilenceScanner.Silence silenceTarget;
+    @Nullable
+    private MusicTrack track;
+    @Nullable
+    private Listener listener;
+
+    public interface Listener {
+        void onMusicBreakChanged();
+    }
 
     public MusicBreak(@NonNull Context context, @NonNull Player episodePlayer) {
         this.context = context.getApplicationContext();
@@ -202,20 +214,15 @@ public class MusicBreak {
         silenceTarget = null;
     }
 
-    /**
-     * Called when the next episode was loaded after the previous one ended.
-     * Returns true if a break started; the break starts playback of the next episode when it is done.
-     */
-    public boolean startBetweenEpisodes(@Nullable FeedMedia nextMedia) {
-        if (active || !canBreak(nextMedia)) {
-            return false;
+    public void startBetweenEpisodes() {
+        if (active) {
+            return;
         }
         Log.d(TAG, "Music break between episodes");
         start(NO_SEEK, false);
-        return true;
     }
 
-    private boolean canBreak(@Nullable FeedMedia media) {
+    public boolean canBreak(@Nullable FeedMedia media) {
         return media != null && media.getMediaType() != MediaType.VIDEO
                 && MusicBreakPreferences.isEnabled(context)
                 && episodePlayer.getDeviceInfo().playbackType != DeviceInfo.PLAYBACK_TYPE_REMOTE;
@@ -258,8 +265,14 @@ public class MusicBreak {
         active = true;
         resumePosition = resumeAt;
         rewindOnResume = rewind;
+        track = null;
         episodePlayer.pause();
-        pickerDisposable = Maybe.fromCallable(() -> MusicBreakTrackPicker.pick(context, lastTrack))
+        notifyChanged();
+        handler.post(progressUpdate);
+        pickerDisposable = Maybe.fromCallable(() -> {
+            Uri uri = MusicBreakTrackPicker.pick(context, lastTrack);
+            return uri == null ? null : MusicTrack.load(context, uri);
+        })
                 .subscribeOn(Schedulers.io())
                 .observeOn(AndroidSchedulers.mainThread())
                 .subscribe(this::playTrack, error -> {
@@ -268,13 +281,14 @@ public class MusicBreak {
                 }, () -> finish(true));
     }
 
-    private void playTrack(Uri track) {
+    private void playTrack(MusicTrack newTrack) {
         pickerDisposable = null;
         if (!active) {
             return;
         }
-        Log.d(TAG, "Playing " + track);
-        lastTrack = track;
+        Log.d(TAG, "Playing " + newTrack.uri + " (" + newTrack.title + ")");
+        track = newTrack;
+        lastTrack = newTrack.uri;
         ExoPlayer player = new ExoPlayer.Builder(context)
                 .setAudioAttributes(new AudioAttributes.Builder()
                         .setUsage(C.USAGE_MEDIA)
@@ -284,34 +298,116 @@ public class MusicBreak {
                 .build();
         player.addListener(new Player.Listener() {
             @Override
-            public void onPlaybackStateChanged(int playbackState) {
-                if (playbackState == Player.STATE_ENDED) {
+            public void onEvents(@NonNull Player eventPlayer, @NonNull Player.Events events) {
+                if (eventPlayer.getPlaybackState() == Player.STATE_ENDED) {
                     finish(true);
-                }
-            }
-
-            @Override
-            public void onPlayWhenReadyChanged(boolean playWhenReady, int reason) {
-                if (!playWhenReady) {
-                    finish(false);
+                } else {
+                    notifyChanged();
                 }
             }
 
             @Override
             public void onPlayerError(@NonNull PlaybackException error) {
-                Log.e(TAG, "Unable to play " + track, error);
+                Log.e(TAG, "Unable to play " + newTrack.uri, error);
                 finish(true);
             }
         });
         musicPlayer = player;
-        player.setMediaItem(MediaItem.fromUri(track));
+        player.setMediaItem(MediaItem.fromUri(newTrack.uri));
         player.prepare();
         player.play();
-        handler.postDelayed(maxDurationReached, MAX_BREAK_MS);
+        notifyChanged();
+    }
+
+    public void setListener(@Nullable Listener listener) {
+        this.listener = listener;
+    }
+
+    @NonNull
+    public MediaMetadata getMediaMetadata() {
+        MediaMetadata.Builder builder = new MediaMetadata.Builder()
+                .setMediaType(MediaMetadata.MEDIA_TYPE_MUSIC)
+                .setTitle(track != null ? track.title : context.getString(R.string.music_break));
+        if (track != null) {
+            builder.setArtist(track.artist).setAlbumTitle(track.album);
+            if (track.artwork != null) {
+                builder.setArtworkData(track.artwork, MediaMetadata.PICTURE_TYPE_FRONT_COVER);
+            }
+        }
+        return builder.build();
+    }
+
+    public boolean getMusicPlayWhenReady() {
+        return musicPlayer == null || musicPlayer.getPlayWhenReady();
+    }
+
+    public int getMusicPlaybackState() {
+        return musicPlayer == null ? Player.STATE_BUFFERING : musicPlayer.getPlaybackState();
+    }
+
+    public boolean isMusicPlaying() {
+        return musicPlayer != null && musicPlayer.isPlaying();
+    }
+
+    public long getMusicPosition() {
+        return musicPlayer == null ? 0 : musicPlayer.getCurrentPosition();
+    }
+
+    public long getMusicBufferedPosition() {
+        return musicPlayer == null ? 0 : musicPlayer.getBufferedPosition();
+    }
+
+    public long getMusicDuration() {
+        return musicPlayer == null ? C.TIME_UNSET : musicPlayer.getDuration();
+    }
+
+    public void playMusic() {
+        if (musicPlayer != null) {
+            musicPlayer.play();
+        }
+    }
+
+    public void pauseMusic() {
+        if (musicPlayer != null) {
+            musicPlayer.pause();
+        }
+    }
+
+    public void seekMusic(long positionMs) {
+        if (musicPlayer != null) {
+            musicPlayer.seekTo(positionMs);
+        }
+    }
+
+    public void skip() {
+        finish(true);
     }
 
     public void cancel() {
         finish(false);
+    }
+
+    private void notifyChanged() {
+        if (listener != null) {
+            listener.onMusicBreakChanged();
+        }
+    }
+
+    private void updateProgress() {
+        if (!active) {
+            return;
+        }
+        if (getMusicPosition() >= MAX_TRACK_MS) {
+            finish(true);
+            return;
+        }
+        long duration = getMusicDuration();
+        EventBus.getDefault().postSticky(MusicBreakEvent.playing(
+                track != null ? track.title : context.getString(R.string.music_break),
+                track != null ? track.getSubtitle() : "", track != null ? track.artwork : null,
+                getMusicPosition(), duration == C.TIME_UNSET ? 0 : duration,
+                getMusicPlayWhenReady()));
+        handler.postDelayed(progressUpdate, PROGRESS_UPDATE_MS);
     }
 
     private void finish(boolean resumeEpisode) {
@@ -323,12 +419,16 @@ public class MusicBreak {
             pickerDisposable.dispose();
             pickerDisposable = null;
         }
-        handler.removeCallbacks(maxDurationReached);
+        handler.removeCallbacks(progressUpdate);
         ExoPlayer player = musicPlayer;
         musicPlayer = null;
+        track = null;
         if (player != null) {
             handler.post(player::release);
         }
+        EventBus.getDefault().removeStickyEvent(MusicBreakEvent.class);
+        EventBus.getDefault().post(MusicBreakEvent.ended());
+        notifyChanged();
         if (!resumeEpisode) {
             return;
         }

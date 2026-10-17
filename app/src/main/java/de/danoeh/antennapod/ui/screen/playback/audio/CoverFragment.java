@@ -34,6 +34,7 @@ import de.danoeh.antennapod.BuildConfig;
 import de.danoeh.antennapod.R;
 import de.danoeh.antennapod.event.MessageEvent;
 import de.danoeh.antennapod.event.PlayerStatusEvent;
+import de.danoeh.antennapod.event.playback.MusicBreakEvent;
 import de.danoeh.antennapod.model.feed.Feed;
 import de.danoeh.antennapod.playback.service.PlaybackService;
 import de.danoeh.antennapod.playback.service.PlaybackServiceStarter;
@@ -76,6 +77,8 @@ public class CoverFragment extends Fragment {
     private Disposable disposable;
     private int displayedChapterIndex = -1;
     private Playable media;
+    private MusicBreakEvent musicBreak;
+    private byte[] shownMusicArtwork;
 
     @Override
     public View onCreateView(LayoutInflater inflater, ViewGroup container, Bundle savedInstanceState) {
@@ -190,6 +193,10 @@ public class CoverFragment extends Fragment {
         displayedChapterIndex = -1;
         refreshChapterData(Chapter.getAfterPosition(media.getChapters(), media.getPosition()));
         updateChapterControlVisibility();
+        if (musicBreak != null) {
+            shownMusicArtwork = null;
+            showMusicBreak();
+        }
     }
 
     private void openFeed(Feed feed) {
@@ -304,6 +311,36 @@ public class CoverFragment extends Fragment {
         loadMediaInfo(false);
     }
 
+    @Subscribe(sticky = true, threadMode = ThreadMode.MAIN)
+    public void onMusicBreakEvent(MusicBreakEvent event) {
+        boolean wasActive = musicBreak != null;
+        musicBreak = event.isActive() ? event : null;
+        if (musicBreak != null) {
+            showMusicBreak();
+        } else if (wasActive) {
+            shownMusicArtwork = null;
+            loadMediaInfo(false);
+        }
+    }
+
+    private void showMusicBreak() {
+        if (viewBinding == null) {
+            return;
+        }
+        viewBinding.txtvEpisodeTitle.setText(musicBreak.getTitle());
+        viewBinding.txtvPodcastTitle.setText(musicBreak.getSubtitle());
+        if (musicBreak.getArtwork() != null && musicBreak.getArtwork() != shownMusicArtwork) {
+            shownMusicArtwork = musicBreak.getArtwork();
+            Glide.with(this)
+                    .load(shownMusicArtwork)
+                    .apply(new RequestOptions()
+                            .dontAnimate()
+                            .transform(new FitCenter(),
+                                    new RoundedCorners((int) (16 * getResources().getDisplayMetrics().density))))
+                    .into(viewBinding.imgvCover);
+        }
+    }
+
     @Subscribe(threadMode = ThreadMode.MAIN)
     public void onEventMainThread(PlaybackPositionEvent event) {
         if (media == null) {
@@ -316,6 +353,9 @@ public class CoverFragment extends Fragment {
     }
 
     private void displayCoverImage() {
+        if (musicBreak != null && musicBreak.getArtwork() != null) {
+            return;
+        }
         RequestOptions options = new RequestOptions()
                 .dontAnimate()
                 .transform(new FitCenter(),

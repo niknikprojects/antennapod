@@ -18,6 +18,7 @@ import de.danoeh.antennapod.BuildConfig;
 import de.danoeh.antennapod.R;
 import de.danoeh.antennapod.activity.MainActivity;
 import de.danoeh.antennapod.event.PlayerStatusEvent;
+import de.danoeh.antennapod.event.playback.MusicBreakEvent;
 import de.danoeh.antennapod.event.playback.PlaybackPositionEvent;
 import de.danoeh.antennapod.event.playback.PlaybackServiceEvent;
 import de.danoeh.antennapod.model.playback.MediaType;
@@ -51,6 +52,8 @@ public class ExternalPlayerFragment extends Fragment {
     private ProgressBar progressBar;
     private Disposable disposable;
     private Playable currentMedia;
+    private MusicBreakEvent musicBreak;
+    private byte[] shownMusicArtwork;
 
     public ExternalPlayerFragment() {
         super();
@@ -79,6 +82,17 @@ public class ExternalPlayerFragment extends Fragment {
             }
         });
         butPlay.setOnClickListener(v -> {
+            if (musicBreak != null) {
+                boolean musicPlaying = musicBreak.isPlaying();
+                PlaybackController.bindToMedia3Service(getContext(), controller -> {
+                    if (musicPlaying) {
+                        controller.pause();
+                    } else {
+                        controller.play();
+                    }
+                });
+                return;
+            }
             if (PlaybackService.isRunning
                     && PlaybackPreferences.getCurrentPlayerStatus() == PlaybackPreferences.PLAYER_STATUS_PLAYING) {
                 if (BuildConfig.USE_MEDIA3_PLAYBACK_SERVICE) {
@@ -116,6 +130,9 @@ public class ExternalPlayerFragment extends Fragment {
 
     @Subscribe(threadMode = ThreadMode.MAIN)
     public void onPositionObserverUpdate(PlaybackPositionEvent event) {
+        if (musicBreak != null) {
+            return;
+        }
         if (event.getPosition() == Playable.INVALID_TIME || event.getDuration() == Playable.INVALID_TIME) {
             return;
         }
@@ -187,6 +204,38 @@ public class ExternalPlayerFragment extends Fragment {
         } else {
             butPlay.setVisibility(View.VISIBLE);
             ((MainActivity) getActivity()).getBottomSheet().setLocked(false);
+        }
+        if (musicBreak != null) {
+            shownMusicArtwork = null;
+            showMusicBreak();
+        }
+    }
+
+    @Subscribe(sticky = true, threadMode = ThreadMode.MAIN)
+    public void onMusicBreakEvent(MusicBreakEvent event) {
+        boolean wasActive = musicBreak != null;
+        musicBreak = event.isActive() ? event : null;
+        if (musicBreak != null) {
+            showMusicBreak();
+        } else if (wasActive) {
+            shownMusicArtwork = null;
+            loadMediaInfo();
+        }
+    }
+
+    private void showMusicBreak() {
+        txtvTitle.setText("♪ " + musicBreak.getTitle());
+        feedName.setText(musicBreak.getSubtitle());
+        if (musicBreak.getDuration() > 0) {
+            progressBar.setProgress((int) (100 * musicBreak.getPosition() / musicBreak.getDuration()));
+        }
+        butPlay.setIsShowPlay(!musicBreak.isPlaying());
+        if (musicBreak.getArtwork() != null && musicBreak.getArtwork() != shownMusicArtwork) {
+            shownMusicArtwork = musicBreak.getArtwork();
+            Glide.with(this)
+                    .load(shownMusicArtwork)
+                    .apply(new RequestOptions().fitCenter().dontAnimate())
+                    .into(imgvCover);
         }
     }
 }
