@@ -11,4 +11,6 @@
     <string name="pref_music_break_folders_none">Inga mappar valda</string>
     <string name="music_break_add_folder">Lägg till mapp</string>
     <string name="music_break_permission_denied">Åtkomst till musik nekades</string>
+    <string name="pref_music_break_replace_ads_title">Byt reklam mot musik</string>
+    <string name="pref_music_break_replace_ads_sum">Spela en låt i stället för kapitel märkta som reklam eller sponsor och fortsätt efter dem</string>
 </resources>

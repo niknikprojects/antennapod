@@ -14,6 +14,7 @@ public class MusicBreakPreferences {
     public static final String PREF_INTERVAL_MINUTES = "prefMusicBreakInterval";
     public static final String PREF_SOURCE = "prefMusicBreakSource";
     public static final String PREF_FOLDERS = "prefMusicBreakFolders";
+    public static final String PREF_REPLACE_ADS = "prefMusicBreakReplaceAds";
 
     public static final String SOURCE_ALL = "all";
     public static final String SOURCE_FOLDERS = "folders";
@@ -24,6 +25,10 @@ public class MusicBreakPreferences {
 
     public static boolean isEnabled(@NonNull Context context) {
         return prefs(context).getBoolean(PREF_ENABLED, false);
+    }
+
+    public static boolean isReplaceAds(@NonNull Context context) {
+        return prefs(context).getBoolean(PREF_REPLACE_ADS, true);
     }
 
     public static long getIntervalMillis(@NonNull Context context) {

@@ -117,5 +117,11 @@
                 android:dependency="prefMusicBreakEnabled"
                 android:key="prefMusicBreakFoldersLauncher"
                 android:title="@string/pref_music_break_folders_title"/>
+        <SwitchPreferenceCompat
+                android:defaultValue="true"
+                android:dependency="prefMusicBreakEnabled"
+                android:key="prefMusicBreakReplaceAds"
+                android:summary="@string/pref_music_break_replace_ads_sum"
+                android:title="@string/pref_music_break_replace_ads_title"/>
     </PreferenceCategory>
 </PreferenceScreen>

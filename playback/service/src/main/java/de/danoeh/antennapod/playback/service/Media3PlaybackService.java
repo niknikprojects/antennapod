@@ -259,7 +259,7 @@ public class Media3PlaybackService extends MediaLibraryService {
                         new PlaybackPositionEvent((int) positionMs, (int) player.getDuration()));
             }
         };
-        musicBreak = new MusicBreak(this, player);
+        musicBreak = new MusicBreak(this, player, exoPlayer);
         player.addListener(playerListener);
         mediaSession = new MediaLibraryService.MediaLibrarySession.Builder(this,
                         new MusicBreakSessionPlayer(player, musicBreak), sessionCallback)

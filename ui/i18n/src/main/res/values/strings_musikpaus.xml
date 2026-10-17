@@ -11,4 +11,6 @@
     <string name="pref_music_break_folders_none">No folders selected</string>
     <string name="music_break_add_folder">Add folder</string>
     <string name="music_break_permission_denied">Access to music was denied</string>
+    <string name="pref_music_break_replace_ads_title">Replace ads with music</string>
+    <string name="pref_music_break_replace_ads_sum">Play a track instead of chapters marked as ads or sponsors and continue after them</string>
 </resources>
