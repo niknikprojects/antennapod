@@ -45,6 +45,7 @@ public class MusicBreak {
     private static final long SCAN_LEAD_MS = 30_000;
     private static final long MAX_PAUSE_OFFSET_MS = 300;
     private static final long MAX_SCORED_SILENCE_MS = 2000;
+    private static final double DISTANCE_PENALTY_MS = 150;
 
     private final Context context;
     private final Player episodePlayer;
@@ -140,14 +141,14 @@ public class MusicBreak {
         handler.removeCallbacks(silenceCheck);
         silenceTarget = null;
         long position = episodePlayer.getCurrentPosition();
-        double bestScore = 0;
+        double bestScore = Double.NEGATIVE_INFINITY;
         for (SilenceScanner.Silence silence : silences) {
             if (getPauseAt(silence) <= position + MAX_PAUSE_OFFSET_MS) {
                 continue;
             }
             double distance = Math.min(1.0,
                     Math.abs((silence.startMs + silence.endMs) / 2 - point) / (double) Math.max(windowMs, 1));
-            double score = Math.min(silence.getLength(), MAX_SCORED_SILENCE_MS) * (1 - 0.6 * distance);
+            double score = Math.min(silence.getLength(), MAX_SCORED_SILENCE_MS) - DISTANCE_PENALTY_MS * distance;
             if (score > bestScore) {
                 bestScore = score;
                 silenceTarget = silence;
