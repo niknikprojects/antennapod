@@ -9,6 +9,7 @@ import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.provider.DocumentsContract;
+import android.text.InputType;
 import android.text.TextUtils;
 import android.util.Log;
 import android.widget.Toast;
@@ -17,6 +18,7 @@ import androidx.activity.result.contract.ActivityResultContracts;
 import androidx.annotation.NonNull;
 import androidx.core.content.ContextCompat;
 import androidx.collection.ArrayMap;
+import androidx.preference.EditTextPreference;
 import androidx.preference.ListPreference;
 import androidx.preference.Preference;
 import com.google.android.material.dialog.MaterialAlertDialogBuilder;
@@ -180,6 +182,14 @@ public class PlaybackPreferencesFragment extends AnimatedPreferenceFragment {
             return true;
         });
         updateMusicFoldersPreference();
+
+        EditTextPreference listenBrainzPref = requirePreference(MusicBreakPreferences.PREF_LISTENBRAINZ_TOKEN);
+        listenBrainzPref.setOnBindEditTextListener(editText -> editText.setInputType(
+                InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD));
+        listenBrainzPref.setSummaryProvider(preference -> res.getString(
+                TextUtils.isEmpty(((EditTextPreference) preference).getText())
+                        ? R.string.pref_music_break_listenbrainz_sum_off
+                        : R.string.pref_music_break_listenbrainz_sum_on));
     }
 
     private void updateMusicFoldersPreference() {

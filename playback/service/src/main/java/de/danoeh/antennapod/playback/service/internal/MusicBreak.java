@@ -46,6 +46,7 @@ import java.util.regex.Pattern;
  * are replaced by a track. The end of an episode counts as a break when the next episode starts
  * automatically. Pauses are scheduled as player messages, so they happen exactly at the position.
  * The music volume is lowered to the measured level of the episode (or a typical podcast level).
+ * Tracks are submitted to ListenBrainz when a user token is set.
  */
 @OptIn(markerClass = UnstableApi.class)
 public class MusicBreak {
@@ -68,6 +69,7 @@ public class MusicBreak {
     private static final long EPISODE_LEVEL_SAMPLE_MS = 60_000;
     private static final double DEFAULT_EPISODE_LEVEL_DB = -20;
     private static final float MIN_MUSIC_VOLUME = 0.05f;
+    private static final long LISTEN_MIN_MS = TimeUnit.MINUTES.toMillis(4);
     private static final Pattern AD_CHAPTER = Pattern.compile(
             "\\b(ad|ads|ad break|advert|adverts|advertisement|advertising|sponsor|sponsors|sponsored|"
                     + "sponsorship|annons|annonser|reklam|werbung|anzeige)\\b",
@@ -109,6 +111,8 @@ public class MusicBreak {
     private long pendingPausePosition = NO_SEEK;
     @Nullable
     private MusicTrack track;
+    private long trackStartedAtMs;
+    private boolean playingNowSubmitted = false;
     @Nullable
     private Listener listener;
 
@@ -469,6 +473,8 @@ public class MusicBreak {
         Log.d(TAG, "Playing " + newTrack.uri + " (" + newTrack.title + ")");
         track = newTrack;
         lastTrack = newTrack.uri;
+        trackStartedAtMs = System.currentTimeMillis();
+        playingNowSubmitted = false;
         ExoPlayer player = new ExoPlayer.Builder(context)
                 .setAudioAttributes(new AudioAttributes.Builder()
                         .setUsage(C.USAGE_MEDIA)
@@ -482,6 +488,12 @@ public class MusicBreak {
                 if (eventPlayer.getPlaybackState() == Player.STATE_ENDED) {
                     finish(true);
                 } else {
+                    if (!playingNowSubmitted && eventPlayer.isPlaying()) {
+                        playingNowSubmitted = true;
+                        long duration = eventPlayer.getDuration();
+                        Schedulers.io().scheduleDirect(() -> ListenBrainz.submitPlayingNow(context, newTrack,
+                                duration == C.TIME_UNSET ? 0 : duration));
+                    }
                     notifyChanged();
                 }
             }
@@ -609,6 +621,9 @@ public class MusicBreak {
         handler.removeCallbacks(progressUpdate);
         ExoPlayer player = musicPlayer;
         musicPlayer = null;
+        if (player != null && track != null) {
+            submitListen(player, track);
+        }
         track = null;
         if (player != null) {
             handler.post(player::release);
@@ -629,6 +644,17 @@ public class MusicBreak {
             }
             episodePlayer.setPlayWhenReady(true);
         }
+    }
+
+    private void submitListen(ExoPlayer player, MusicTrack listenedTrack) {
+        long duration = player.getDuration() == C.TIME_UNSET ? 0 : player.getDuration();
+        long played = player.getCurrentPosition();
+        if (played < (duration > 0 ? Math.min(duration / 2, LISTEN_MIN_MS) : LISTEN_MIN_MS)) {
+            Log.d(TAG, "Not a listen, played " + played + " of " + duration);
+            return;
+        }
+        long listenedAt = trackStartedAtMs / 1000;
+        Schedulers.io().scheduleDirect(() -> ListenBrainz.submitListen(context, listenedTrack, listenedAt, duration));
     }
 
     public void release() {

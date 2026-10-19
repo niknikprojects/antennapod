@@ -15,6 +15,7 @@ public class MusicBreakPreferences {
     public static final String PREF_SOURCE = "prefMusicBreakSource";
     public static final String PREF_FOLDERS = "prefMusicBreakFolders";
     public static final String PREF_REPLACE_ADS = "prefMusicBreakReplaceAds";
+    public static final String PREF_LISTENBRAINZ_TOKEN = "prefMusicBreakListenBrainzToken";
     private static final String PREF_PLAYED_TRACKS = "prefMusicBreakPlayedTracks";
 
     public static final String SOURCE_ALL = "all";
@@ -48,6 +49,11 @@ public class MusicBreakPreferences {
 
     public static void setFolders(@NonNull Context context, @NonNull Set<String> folders) {
         prefs(context).edit().putStringSet(PREF_FOLDERS, new HashSet<>(folders)).apply();
+    }
+
+    @NonNull
+    public static String getListenBrainzToken(@NonNull Context context) {
+        return prefs(context).getString(PREF_LISTENBRAINZ_TOKEN, "").trim();
     }
 
     @NonNull

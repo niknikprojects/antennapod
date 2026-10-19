@@ -123,5 +123,10 @@
                 android:key="prefMusicBreakReplaceAds"
                 android:summary="@string/pref_music_break_replace_ads_sum"
                 android:title="@string/pref_music_break_replace_ads_title"/>
+        <EditTextPreference
+                android:dependency="prefMusicBreakEnabled"
+                android:key="prefMusicBreakListenBrainzToken"
+                android:dialogMessage="@string/pref_music_break_listenbrainz_dialog"
+                android:title="@string/pref_music_break_listenbrainz_title"/>
     </PreferenceCategory>
 </PreferenceScreen>

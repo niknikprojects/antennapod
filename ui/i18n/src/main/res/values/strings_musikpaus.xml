@@ -13,4 +13,8 @@
     <string name="music_break_permission_denied">Access to music was denied</string>
     <string name="pref_music_break_replace_ads_title">Replace ads with music</string>
     <string name="pref_music_break_replace_ads_sum">Play a track instead of chapters marked as ads or sponsors and continue after them</string>
+    <string name="pref_music_break_listenbrainz_title">ListenBrainz</string>
+    <string name="pref_music_break_listenbrainz_sum_off">Not set up. Add a user token to submit listens of music break tracks</string>
+    <string name="pref_music_break_listenbrainz_sum_on">Listens of music break tracks are submitted</string>
+    <string name="pref_music_break_listenbrainz_dialog">User token from listenbrainz.org/settings. Leave empty to turn off.</string>
 </resources>

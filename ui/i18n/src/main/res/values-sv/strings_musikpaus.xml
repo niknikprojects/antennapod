@@ -13,4 +13,8 @@
     <string name="music_break_permission_denied">Åtkomst till musik nekades</string>
     <string name="pref_music_break_replace_ads_title">Byt reklam mot musik</string>
     <string name="pref_music_break_replace_ads_sum">Spela en låt i stället för kapitel märkta som reklam eller sponsor och fortsätt efter dem</string>
+    <string name="pref_music_break_listenbrainz_title">ListenBrainz</string>
+    <string name="pref_music_break_listenbrainz_sum_off">Inte inställt. Lägg in en användartoken för att skicka lyssningar av musikpausernas låtar</string>
+    <string name="pref_music_break_listenbrainz_sum_on">Lyssningar av musikpausernas låtar skickas</string>
+    <string name="pref_music_break_listenbrainz_dialog">Användartoken från listenbrainz.org/settings. Lämna tomt för att stänga av.</string>
 </resources>
