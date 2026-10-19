@@ -20,9 +20,11 @@ import androidx.media3.exoplayer.ExoPlayer;
 import androidx.media3.exoplayer.PlayerMessage;
 import de.danoeh.antennapod.event.playback.MusicBreakEvent;
 import de.danoeh.antennapod.model.feed.Chapter;
+import de.danoeh.antennapod.model.feed.FeedItem;
 import de.danoeh.antennapod.model.feed.FeedMedia;
 import de.danoeh.antennapod.model.playback.MediaType;
 import de.danoeh.antennapod.playback.service.R;
+import de.danoeh.antennapod.storage.database.DBReader;
 import de.danoeh.antennapod.storage.preferences.MusicBreakPreferences;
 import io.reactivex.rxjava3.android.schedulers.AndroidSchedulers;
 import io.reactivex.rxjava3.core.Maybe;
@@ -36,15 +38,17 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
+import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
  * Splits each episode into parts of roughly the configured interval and plays a random local
  * music track between them, preferably at a chapter start near each break point, otherwise in
  * a pause of the speaker found by decoding the surroundings of the break point in advance.
- * Without a natural pause the episode fades out at the break point. Chapters that look like ads
- * are replaced by a track. The end of an episode counts as a break when the next episode starts
- * automatically. Pauses are scheduled as player messages, so they happen exactly at the position.
+ * Without a natural pause the episode stops at the break point. Timecodes in the show notes count as
+ * chapter starts. Chapters that look like ads are replaced by a track. The end of an episode counts
+ * as a break when the next episode starts automatically. Pauses are scheduled as player messages,
+ * so they happen exactly at the position.
  * The music volume is lowered to the measured level of the episode (or a typical podcast level).
  * Tracks are submitted to ListenBrainz when a user token is set.
  */
@@ -62,10 +66,6 @@ public class MusicBreak {
     private static final long MAX_PAUSE_OFFSET_MS = 300;
     private static final long MAX_SCORED_SILENCE_MS = 2000;
     private static final double DISTANCE_PENALTY_MS = 150;
-    private static final long EPISODE_FADE_OUT_MS = 1500;
-    private static final long EPISODE_FADE_IN_MS = 1000;
-    private static final long MUSIC_FADE_IN_MS = 800;
-    private static final long FADE_STEP_MS = 50;
     private static final long EPISODE_LEVEL_SAMPLE_MS = 60_000;
     private static final double DEFAULT_EPISODE_LEVEL_DB = -20;
     private static final float MIN_MUSIC_VOLUME = 0.05f;
@@ -74,6 +74,8 @@ public class MusicBreak {
             "\\b(ad|ads|ad break|advert|adverts|advertisement|advertising|sponsor|sponsors|sponsored|"
                     + "sponsorship|annons|annonser|reklam|werbung|anzeige)\\b",
             Pattern.CASE_INSENSITIVE | Pattern.UNICODE_CASE);
+    private static final Pattern TIMECODE = Pattern.compile("\\b(?:(\\d+):)?(\\d+):(\\d{2})\\b");
+    private static final int MIN_NOTE_TIMECODES = 2;
 
     private final Context context;
     private final Player episodePlayer;
@@ -82,15 +84,11 @@ public class MusicBreak {
     private final Runnable progressUpdate = this::updateProgress;
     private final List<Long> breakPoints = new ArrayList<>();
     private final Set<Long> handledAdStarts = new HashSet<>();
+    private final List<Long> noteTimecodes = new ArrayList<>();
     private long plannedMediaId = -1;
     private long windowMs = 0;
     private boolean active = false;
-    private boolean fadingOut = false;
     private long resumePosition = NO_SEEK;
-    private boolean rewindOnResume = false;
-    private float episodeVolume = 1f;
-    @Nullable
-    private Runnable fadeStep;
     @Nullable
     private ExoPlayer musicPlayer;
     @Nullable
@@ -100,6 +98,8 @@ public class MusicBreak {
     private double episodeLevelDb = Double.NaN;
     @Nullable
     private Disposable levelDisposable;
+    @Nullable
+    private Disposable notesDisposable;
     private long scanPoint = NO_SEEK;
     @Nullable
     private Disposable scanDisposable;
@@ -131,13 +131,14 @@ public class MusicBreak {
     }
 
     public void onPlaybackTick(@Nullable FeedMedia media) {
-        if (active || fadingOut || !canBreak(media) || !episodePlayer.isPlaying()) {
+        if (active || !canBreak(media) || !episodePlayer.isPlaying()) {
             return;
         }
         long position = episodePlayer.getCurrentPosition();
         if (media.getId() != plannedMediaId) {
             planBreaks(media.getId(), position, episodePlayer.getDuration());
             measureEpisodeLevel(media, episodePlayer.getDuration());
+            loadNoteTimecodes(media, episodePlayer.getDuration());
         }
         while (!breakPoints.isEmpty() && breakPoints.get(0) + windowMs < position) {
             breakPoints.remove(0);
@@ -160,12 +161,12 @@ public class MusicBreak {
                 schedulePause(media.getId(), chapterStart, () -> {
                     Log.d(TAG, "Music break at chapter start " + chapterStart);
                     consumeBreakPoint();
-                    start(chapterStart, false);
+                    start(chapterStart);
                 });
             } else if (pendingPausePosition != chapterStart || position >= chapterStart + CHAPTER_TOLERANCE_MS) {
                 Log.d(TAG, "Music break after chapter start " + chapterStart);
                 consumeBreakPoint();
-                start(chapterStart, false);
+                start(chapterStart);
             }
             return;
         }
@@ -185,7 +186,7 @@ public class MusicBreak {
         if (position >= point) {
             Log.d(TAG, "Music break without natural pause at " + position);
             consumeBreakPoint();
-            fadeOutAndStart();
+            start(NO_SEEK);
         }
     }
 
@@ -220,7 +221,7 @@ public class MusicBreak {
             breakPoints.remove(0);
         }
         resetSilenceSearch();
-        start(adEnd, false);
+        start(adEnd);
     }
 
     private void schedulePause(long mediaId, long positionMs, Runnable action) {
@@ -232,7 +233,7 @@ public class MusicBreak {
         pendingPause = exoPlayer.createMessage((messageType, payload) -> {
             pendingPause = null;
             pendingPausePosition = NO_SEEK;
-            if (!active && !fadingOut && mediaId == plannedMediaId && episodePlayer.isPlaying()) {
+            if (!active && mediaId == plannedMediaId && episodePlayer.isPlaying()) {
                 action.run();
             }
         })
@@ -292,7 +293,7 @@ public class MusicBreak {
             schedulePause(mediaId, getPauseAt(target), () -> {
                 Log.d(TAG, "Music break at silence " + target);
                 consumeBreakPoint();
-                start(NO_SEEK, false);
+                start(NO_SEEK);
             });
         }
     }
@@ -324,7 +325,7 @@ public class MusicBreak {
             return;
         }
         Log.d(TAG, "Music break between episodes");
-        start(NO_SEEK, false);
+        start(NO_SEEK);
     }
 
     public boolean canBreak(@Nullable FeedMedia media) {
@@ -375,26 +376,81 @@ public class MusicBreak {
                 });
     }
 
+    private void loadNoteTimecodes(FeedMedia media, long duration) {
+        if (notesDisposable != null) {
+            notesDisposable.dispose();
+            notesDisposable = null;
+        }
+        noteTimecodes.clear();
+        long mediaId = media.getId();
+        long itemId = media.getItemId();
+        notesDisposable = Single.fromCallable(() -> {
+            FeedItem item = DBReader.getFeedItem(itemId);
+            if (item == null) {
+                return new ArrayList<Long>();
+            }
+            DBReader.loadDescriptionOfFeedItem(item);
+            return parseTimecodes(item.getDescription(), duration);
+        })
+                .subscribeOn(Schedulers.io())
+                .observeOn(AndroidSchedulers.mainThread())
+                .subscribe(timecodes -> {
+                    notesDisposable = null;
+                    if (mediaId == plannedMediaId) {
+                        noteTimecodes.addAll(timecodes);
+                        Log.d(TAG, "Timecodes in show notes: " + timecodes);
+                    }
+                }, error -> {
+                    notesDisposable = null;
+                    Log.e(TAG, "Unable to read show notes", error);
+                });
+    }
+
+    private static List<Long> parseTimecodes(@Nullable String notes, long duration) {
+        List<Long> timecodes = new ArrayList<>();
+        if (notes == null) {
+            return timecodes;
+        }
+        Matcher matcher = TIMECODE.matcher(notes);
+        while (matcher.find()) {
+            long hours = matcher.group(1) != null ? Long.parseLong(matcher.group(1)) : 0;
+            long minutes = Long.parseLong(matcher.group(2));
+            long seconds = Long.parseLong(matcher.group(3));
+            if (seconds >= 60 || (hours > 0 && minutes >= 60)) {
+                continue;
+            }
+            long position = ((hours * 60 + minutes) * 60 + seconds) * 1000;
+            if (position > 0 && position < duration && !timecodes.contains(position)) {
+                timecodes.add(position);
+            }
+        }
+        if (timecodes.size() < MIN_NOTE_TIMECODES) {
+            timecodes.clear();
+        }
+        return timecodes;
+    }
+
     private float getMusicVolume(MusicTrack musicTrack) {
         if (Double.isNaN(musicTrack.levelDb)) {
             return 1f;
         }
         double target = Double.isNaN(episodeLevelDb) ? DEFAULT_EPISODE_LEVEL_DB : episodeLevelDb;
         float volume = (float) Math.pow(10, (target - musicTrack.levelDb) / 20);
-        float episodeVolume = episodePlayer.getVolume() > 0 ? episodePlayer.getVolume() : this.episodeVolume;
-        volume = Math.max(MIN_MUSIC_VOLUME, Math.min(1f, volume * episodeVolume));
+        volume = Math.max(MIN_MUSIC_VOLUME, Math.min(1f, volume * episodePlayer.getVolume()));
         Log.d(TAG, "Music level " + musicTrack.levelDb + " dB, episode " + target + " dB, volume " + volume);
         return volume;
     }
 
-    private static long findChapterStart(FeedMedia media, long from, long to, long target) {
+    private long findChapterStart(FeedMedia media, long from, long to, long target) {
+        List<Long> starts = new ArrayList<>(noteTimecodes);
         List<Chapter> chapters = media.getChapters();
-        if (chapters == null) {
-            return NO_SEEK;
+        if (chapters != null) {
+            for (Chapter chapter : chapters) {
+                starts.add(chapter.getStart());
+            }
         }
         long best = NO_SEEK;
-        for (Chapter chapter : chapters) {
-            long start = chapter.getStart();
+        for (long start : starts) {
             if (start > 0 && start >= from && start <= to
                     && (best == NO_SEEK || Math.abs(start - target) < Math.abs(best - target))) {
                 best = start;
@@ -403,52 +459,10 @@ public class MusicBreak {
         return best;
     }
 
-    private void fadeOutAndStart() {
-        fadingOut = true;
-        episodeVolume = episodePlayer.getVolume();
-        fade(episodePlayer, episodeVolume, 0f, EPISODE_FADE_OUT_MS, () -> {
-            fadingOut = false;
-            if (episodePlayer.getPlayWhenReady()) {
-                start(NO_SEEK, true);
-            }
-            episodePlayer.setVolume(episodeVolume);
-        });
-    }
-
-    private void fade(Player player, float from, float to, long durationMs, @Nullable Runnable done) {
-        cancelFade();
-        long startTime = System.currentTimeMillis();
-        player.setVolume(from);
-        fadeStep = new Runnable() {
-            @Override
-            public void run() {
-                float progress = Math.min(1f, (System.currentTimeMillis() - startTime) / (float) durationMs);
-                player.setVolume(from + (to - from) * progress);
-                if (progress < 1f) {
-                    handler.postDelayed(this, FADE_STEP_MS);
-                } else {
-                    fadeStep = null;
-                    if (done != null) {
-                        done.run();
-                    }
-                }
-            }
-        };
-        handler.postDelayed(fadeStep, FADE_STEP_MS);
-    }
-
-    private void cancelFade() {
-        if (fadeStep != null) {
-            handler.removeCallbacks(fadeStep);
-            fadeStep = null;
-        }
-    }
-
-    private void start(long resumeAt, boolean rewind) {
+    private void start(long resumeAt) {
         cancelPendingPause();
         active = true;
         resumePosition = resumeAt;
-        rewindOnResume = rewind;
         track = null;
         episodePlayer.pause();
         notifyChanged();
@@ -508,7 +522,7 @@ public class MusicBreak {
         player.setMediaItem(MediaItem.fromUri(newTrack.uri));
         player.prepare();
         player.play();
-        fade(player, 0f, getMusicVolume(newTrack), MUSIC_FADE_IN_MS, null);
+        player.setVolume(getMusicVolume(newTrack));
         notifyChanged();
     }
 
@@ -577,11 +591,6 @@ public class MusicBreak {
     }
 
     public void cancel() {
-        if (fadingOut) {
-            cancelFade();
-            fadingOut = false;
-            episodePlayer.setVolume(episodeVolume);
-        }
         finish(false);
     }
 
@@ -613,7 +622,6 @@ public class MusicBreak {
             return;
         }
         active = false;
-        cancelFade();
         if (pickerDisposable != null) {
             pickerDisposable.dispose();
             pickerDisposable = null;
@@ -634,16 +642,10 @@ public class MusicBreak {
         if (!resumeEpisode) {
             return;
         }
-        if (rewindOnResume) {
-            episodePlayer.setVolume(0f);
-            episodePlayer.play();
-            fade(episodePlayer, 0f, episodeVolume, EPISODE_FADE_IN_MS, null);
-        } else {
-            if (resumePosition != NO_SEEK) {
-                episodePlayer.seekTo(resumePosition);
-            }
-            episodePlayer.setPlayWhenReady(true);
+        if (resumePosition != NO_SEEK) {
+            episodePlayer.seekTo(resumePosition);
         }
+        episodePlayer.setPlayWhenReady(true);
     }
 
     private void submitListen(ExoPlayer player, MusicTrack listenedTrack) {
@@ -662,6 +664,10 @@ public class MusicBreak {
         if (levelDisposable != null) {
             levelDisposable.dispose();
             levelDisposable = null;
+        }
+        if (notesDisposable != null) {
+            notesDisposable.dispose();
+            notesDisposable = null;
         }
         cancel();
     }
