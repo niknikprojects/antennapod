@@ -45,6 +45,7 @@ import java.util.regex.Pattern;
  * Without a natural pause the episode fades out at the break point. Chapters that look like ads
  * are replaced by a track. The end of an episode counts as a break when the next episode starts
  * automatically. Pauses are scheduled as player messages, so they happen exactly at the position.
+ * The music volume is lowered to the measured level of the episode (or a typical podcast level).
  */
 @OptIn(markerClass = UnstableApi.class)
 public class MusicBreak {
@@ -64,6 +65,9 @@ public class MusicBreak {
     private static final long EPISODE_FADE_IN_MS = 1000;
     private static final long MUSIC_FADE_IN_MS = 800;
     private static final long FADE_STEP_MS = 50;
+    private static final long EPISODE_LEVEL_SAMPLE_MS = 60_000;
+    private static final double DEFAULT_EPISODE_LEVEL_DB = -20;
+    private static final float MIN_MUSIC_VOLUME = 0.05f;
     private static final Pattern AD_CHAPTER = Pattern.compile(
             "\\b(ad|ads|ad break|advert|adverts|advertisement|advertising|sponsor|sponsors|sponsored|"
                     + "sponsorship|annons|annonser|reklam|werbung|anzeige)\\b",
@@ -91,6 +95,9 @@ public class MusicBreak {
     private Disposable pickerDisposable;
     @Nullable
     private Uri lastTrack;
+    private double episodeLevelDb = Double.NaN;
+    @Nullable
+    private Disposable levelDisposable;
     private long scanPoint = NO_SEEK;
     @Nullable
     private Disposable scanDisposable;
@@ -126,6 +133,7 @@ public class MusicBreak {
         long position = episodePlayer.getCurrentPosition();
         if (media.getId() != plannedMediaId) {
             planBreaks(media.getId(), position, episodePlayer.getDuration());
+            measureEpisodeLevel(media, episodePlayer.getDuration());
         }
         while (!breakPoints.isEmpty() && breakPoints.get(0) + windowMs < position) {
             breakPoints.remove(0);
@@ -339,6 +347,42 @@ public class MusicBreak {
         Log.d(TAG, "Planned music breaks at " + breakPoints + " (window " + windowMs + ")");
     }
 
+    private void measureEpisodeLevel(FeedMedia media, long duration) {
+        if (levelDisposable != null) {
+            levelDisposable.dispose();
+            levelDisposable = null;
+        }
+        episodeLevelDb = Double.NaN;
+        if (!media.localFileAvailable()) {
+            return;
+        }
+        String file = media.getLocalFileUrl();
+        long from = Math.max(0, (duration - EPISODE_LEVEL_SAMPLE_MS) / 3);
+        levelDisposable = Single.fromCallable(() -> SilenceScanner.measureLevel(context, file,
+                        from, from + EPISODE_LEVEL_SAMPLE_MS))
+                .subscribeOn(Schedulers.io())
+                .observeOn(AndroidSchedulers.mainThread())
+                .subscribe(level -> {
+                    levelDisposable = null;
+                    episodeLevelDb = level;
+                }, error -> {
+                    levelDisposable = null;
+                    Log.e(TAG, "Unable to measure episode level", error);
+                });
+    }
+
+    private float getMusicVolume(MusicTrack musicTrack) {
+        if (Double.isNaN(musicTrack.levelDb)) {
+            return 1f;
+        }
+        double target = Double.isNaN(episodeLevelDb) ? DEFAULT_EPISODE_LEVEL_DB : episodeLevelDb;
+        float volume = (float) Math.pow(10, (target - musicTrack.levelDb) / 20);
+        float episodeVolume = episodePlayer.getVolume() > 0 ? episodePlayer.getVolume() : this.episodeVolume;
+        volume = Math.max(MIN_MUSIC_VOLUME, Math.min(1f, volume * episodeVolume));
+        Log.d(TAG, "Music level " + musicTrack.levelDb + " dB, episode " + target + " dB, volume " + volume);
+        return volume;
+    }
+
     private static long findChapterStart(FeedMedia media, long from, long to, long target) {
         List<Chapter> chapters = media.getChapters();
         if (chapters == null) {
@@ -452,7 +496,7 @@ public class MusicBreak {
         player.setMediaItem(MediaItem.fromUri(newTrack.uri));
         player.prepare();
         player.play();
-        fade(player, 0f, 1f, MUSIC_FADE_IN_MS, null);
+        fade(player, 0f, getMusicVolume(newTrack), MUSIC_FADE_IN_MS, null);
         notifyChanged();
     }
 
@@ -589,6 +633,10 @@ public class MusicBreak {
 
     public void release() {
         resetSilenceSearch();
+        if (levelDisposable != null) {
+            levelDisposable.dispose();
+            levelDisposable = null;
+        }
         cancel();
     }
 }

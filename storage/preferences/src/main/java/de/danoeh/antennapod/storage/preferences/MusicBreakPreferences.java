@@ -15,6 +15,7 @@ public class MusicBreakPreferences {
     public static final String PREF_SOURCE = "prefMusicBreakSource";
     public static final String PREF_FOLDERS = "prefMusicBreakFolders";
     public static final String PREF_REPLACE_ADS = "prefMusicBreakReplaceAds";
+    private static final String PREF_PLAYED_TRACKS = "prefMusicBreakPlayedTracks";
 
     public static final String SOURCE_ALL = "all";
     public static final String SOURCE_FOLDERS = "folders";
@@ -47,5 +48,14 @@ public class MusicBreakPreferences {
 
     public static void setFolders(@NonNull Context context, @NonNull Set<String> folders) {
         prefs(context).edit().putStringSet(PREF_FOLDERS, new HashSet<>(folders)).apply();
+    }
+
+    @NonNull
+    public static Set<String> getPlayedTracks(@NonNull Context context) {
+        return new HashSet<>(prefs(context).getStringSet(PREF_PLAYED_TRACKS, new HashSet<>()));
+    }
+
+    public static void setPlayedTracks(@NonNull Context context, @NonNull Set<String> tracks) {
+        prefs(context).edit().putStringSet(PREF_PLAYED_TRACKS, new HashSet<>(tracks)).apply();
     }
 }

@@ -17,6 +17,7 @@ import java.io.ByteArrayOutputStream;
 public class MusicTrack {
     private static final String TAG = "MusicTrack";
     private static final int MAX_ARTWORK_SIZE = 512;
+    private static final long LEVEL_SAMPLE_MS = 30_000;
 
     public final Uri uri;
     public final String title;
@@ -26,14 +27,17 @@ public class MusicTrack {
     public final String album;
     @Nullable
     public final byte[] artwork;
+    /** Average level in dBFS of a part from the middle of the track, NaN if unknown. */
+    public final double levelDb;
 
     private MusicTrack(Uri uri, String title, @Nullable String artist, @Nullable String album,
-                       @Nullable byte[] artwork) {
+                       @Nullable byte[] artwork, double levelDb) {
         this.uri = uri;
         this.title = title;
         this.artist = artist;
         this.album = album;
         this.artwork = artwork;
+        this.levelDb = levelDb;
     }
 
     public String getSubtitle() {
@@ -49,6 +53,7 @@ public class MusicTrack {
         String artist = null;
         String album = null;
         byte[] artwork = null;
+        long durationMs = 0;
         MediaMetadataRetriever retriever = new MediaMetadataRetriever();
         try {
             retriever.setDataSource(context, uri);
@@ -56,6 +61,8 @@ public class MusicTrack {
             artist = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ARTIST);
             album = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ALBUM);
             artwork = scaleArtwork(retriever.getEmbeddedPicture());
+            String duration = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION);
+            durationMs = duration != null ? Long.parseLong(duration) : 0;
         } catch (Exception e) {
             Log.w(TAG, "Unable to read metadata of " + uri, e);
         } finally {
@@ -68,7 +75,9 @@ public class MusicTrack {
         if (TextUtils.isEmpty(title)) {
             title = getFileName(context, uri);
         }
-        return new MusicTrack(uri, title, artist, album, artwork);
+        long levelStart = Math.max(0, (durationMs - LEVEL_SAMPLE_MS) / 2);
+        double levelDb = SilenceScanner.measureLevel(context, uri.toString(), levelStart, levelStart + LEVEL_SAMPLE_MS);
+        return new MusicTrack(uri, title, artist, album, artwork, levelDb);
     }
 
     @Nullable

@@ -13,9 +13,15 @@ import androidx.annotation.Nullable;
 import de.danoeh.antennapod.storage.preferences.MusicBreakPreferences;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Random;
+import java.util.Set;
 
+/**
+ * Picks tracks like a shuffled deck: every track is played once before any track repeats.
+ * The played tracks are remembered across restarts and forgotten when their files disappear.
+ */
 public class MusicBreakTrackPicker {
     private static final String TAG = "MusicBreakTrackPicker";
     private static final long MIN_DURATION_MS = 30_000;
@@ -25,14 +31,35 @@ public class MusicBreakTrackPicker {
     public static Uri pick(@NonNull Context context, @Nullable Uri previous) {
         List<Uri> tracks = MusicBreakPreferences.SOURCE_ALL.equals(MusicBreakPreferences.getSource(context))
                 ? queryMediaStore(context) : scanFolders(context);
-        if (tracks.size() > 1) {
-            tracks.remove(previous);
-        }
         if (tracks.isEmpty()) {
             Log.d(TAG, "No tracks found");
             return null;
         }
-        return tracks.get(RANDOM.nextInt(tracks.size()));
+        Set<String> available = new HashSet<>();
+        for (Uri track : tracks) {
+            available.add(track.toString());
+        }
+        Set<String> played = MusicBreakPreferences.getPlayedTracks(context);
+        played.retainAll(available);
+        List<Uri> candidates = new ArrayList<>();
+        for (Uri track : tracks) {
+            if (!played.contains(track.toString())) {
+                candidates.add(track);
+            }
+        }
+        if (candidates.isEmpty()) {
+            Log.d(TAG, "All " + tracks.size() + " tracks played, starting over");
+            played.clear();
+            candidates.addAll(tracks);
+            if (candidates.size() > 1) {
+                candidates.remove(previous);
+            }
+        }
+        Uri picked = candidates.get(RANDOM.nextInt(candidates.size()));
+        played.add(picked.toString());
+        MusicBreakPreferences.setPlayedTracks(context, played);
+        Log.d(TAG, "Picked " + picked + ", " + (candidates.size() - 1) + " of " + tracks.size() + " left this round");
+        return picked;
     }
 
     private static List<Uri> queryMediaStore(Context context) {

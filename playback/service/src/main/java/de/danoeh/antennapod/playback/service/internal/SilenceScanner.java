@@ -19,7 +19,8 @@ import java.util.Arrays;
 import java.util.List;
 
 /**
- * Decodes a part of a downloaded episode and returns the silent intervals in it, in episode time.
+ * Decodes a part of an audio file to find the silent intervals of a downloaded episode, in episode time,
+ * or the average level of speech or music.
  */
 public class SilenceScanner {
     private static final String TAG = "SilenceScanner";
@@ -29,6 +30,7 @@ public class SilenceScanner {
     private static final double NOISE_FLOOR_MARGIN_DB = 6;
     private static final long TIMEOUT_US = 10_000;
     private static final long MAX_SCAN_TIME_MS = 20_000;
+    private static final double LEVEL_GATE_DB = -45;
 
     public static class Silence {
         public final long startMs;
@@ -55,10 +57,34 @@ public class SilenceScanner {
         if (!media.localFileAvailable()) {
             return new ArrayList<>();
         }
+        List<Silence> silences = findSilences(decode(context, media.getLocalFileUrl(), fromMs, toMs));
+        Log.d(TAG, "Silences between " + fromMs + " and " + toMs + ": " + silences);
+        return silences;
+    }
+
+    /**
+     * Returns the average level in dBFS of the non-silent parts between the given positions,
+     * or NaN if the file can not be decoded.
+     */
+    public static double measureLevel(@NonNull Context context, @NonNull String file, long fromMs, long toMs) {
+        double energySum = 0;
+        int frames = 0;
+        for (long[] level : decode(context, file, fromMs, toMs)) {
+            double db = level[1] / 100.0;
+            if (db > LEVEL_GATE_DB) {
+                energySum += Math.pow(10, db / 10);
+                frames++;
+            }
+        }
+        double result = frames == 0 ? Double.NaN : 10 * Math.log10(energySum / frames);
+        Log.d(TAG, "Level of " + file + " between " + fromMs + " and " + toMs + ": " + result + " dB");
+        return result;
+    }
+
+    private static List<long[]> decode(Context context, String file, long fromMs, long toMs) {
         MediaExtractor extractor = new MediaExtractor();
         MediaCodec codec = null;
         try {
-            String file = media.getLocalFileUrl();
             if (file.startsWith("content://")) {
                 extractor.setDataSource(context, Uri.parse(file), null);
             } else {
@@ -74,12 +100,9 @@ public class SilenceScanner {
             codec.configure(format, null, null, 0);
             codec.start();
             extractor.seekTo(fromMs * 1000, MediaExtractor.SEEK_TO_PREVIOUS_SYNC);
-            List<long[]> levels = decodeLevels(extractor, codec, fromMs * 1000, toMs * 1000);
-            List<Silence> silences = findSilences(levels);
-            Log.d(TAG, "Silences between " + fromMs + " and " + toMs + ": " + silences);
-            return silences;
+            return decodeLevels(extractor, codec, fromMs * 1000, toMs * 1000);
         } catch (Exception e) {
-            Log.e(TAG, "Unable to scan for silence", e);
+            Log.e(TAG, "Unable to decode " + file, e);
             return new ArrayList<>();
         } finally {
             if (codec != null) {
