@@ -37,6 +37,7 @@ import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.TreeSet;
 import java.util.concurrent.TimeUnit;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -45,8 +46,10 @@ import java.util.regex.Pattern;
  * Splits each episode into parts of roughly the configured interval and plays a random local
  * music track between them, preferably at a chapter start near each break point, otherwise in
  * a pause of the speaker found by decoding the surroundings of the break point in advance.
- * Without a natural pause the episode stops at the break point. Timecodes in the show notes count as
- * chapter starts. Chapters that look like ads are replaced by a track. The end of an episode counts
+ * Without a natural pause the episode stops at the break point. When the episode has chapters or
+ * timecodes in the show notes, every topic change gets a track, at the chapter start or in the longest
+ * pause near the timecode, and only topics longer than the interval are split further.
+ * Chapters that look like ads are replaced by a track. The end of an episode counts
  * as a break when the next episode starts automatically. Pauses are scheduled as player messages,
  * so they happen exactly at the position.
  * The music volume is lowered to the measured level of the episode (or a typical podcast level).
@@ -76,6 +79,7 @@ public class MusicBreak {
             Pattern.CASE_INSENSITIVE | Pattern.UNICODE_CASE);
     private static final Pattern TIMECODE = Pattern.compile("\\b(?:(\\d+):)?(\\d+):(\\d{2})\\b");
     private static final int MIN_NOTE_TIMECODES = 2;
+    private static final long TIMECODE_WINDOW_MS = 15_000;
 
     private final Context context;
     private final Player episodePlayer;
@@ -85,6 +89,7 @@ public class MusicBreak {
     private final List<Long> breakPoints = new ArrayList<>();
     private final Set<Long> handledAdStarts = new HashSet<>();
     private final List<Long> noteTimecodes = new ArrayList<>();
+    private final Set<Long> timecodePoints = new HashSet<>();
     private long plannedMediaId = -1;
     private long windowMs = 0;
     private boolean active = false;
@@ -136,11 +141,12 @@ public class MusicBreak {
         }
         long position = episodePlayer.getCurrentPosition();
         if (media.getId() != plannedMediaId) {
-            planBreaks(media.getId(), position, episodePlayer.getDuration());
+            noteTimecodes.clear();
+            planBreaks(media, position, episodePlayer.getDuration());
             measureEpisodeLevel(media, episodePlayer.getDuration());
             loadNoteTimecodes(media, episodePlayer.getDuration());
         }
-        while (!breakPoints.isEmpty() && breakPoints.get(0) + windowMs < position) {
+        while (!breakPoints.isEmpty() && breakPoints.get(0) + getWindow(breakPoints.get(0)) < position) {
             breakPoints.remove(0);
             resetSilenceSearch();
         }
@@ -151,11 +157,12 @@ public class MusicBreak {
             return;
         }
         long point = breakPoints.get(0);
-        if (position < point - windowMs - SCAN_LEAD_MS) {
+        long window = getWindow(point);
+        if (position < point - window - SCAN_LEAD_MS) {
             return;
         }
-        long chapterStart = findChapterStart(media, Math.max(point - windowMs, position - CHAPTER_TOLERANCE_MS),
-                point + windowMs, point);
+        long chapterStart = findChapterStart(media, Math.max(point - window, position - CHAPTER_TOLERANCE_MS),
+                point + window, point);
         if (chapterStart != NO_SEEK) {
             if (position < chapterStart) {
                 schedulePause(media.getId(), chapterStart, () -> {
@@ -171,7 +178,7 @@ public class MusicBreak {
             return;
         }
         if (scanPoint != point) {
-            startSilenceScan(media, point, Math.max(point - windowMs, position));
+            startSilenceScan(media, point, Math.max(point - window, position));
             return;
         }
         if (scanDisposable != null) {
@@ -255,7 +262,7 @@ public class MusicBreak {
     private void startSilenceScan(FeedMedia media, long point, long from) {
         resetSilenceSearch();
         scanPoint = point;
-        long to = point + windowMs;
+        long to = point + getWindow(point);
         long mediaId = media.getId();
         scanDisposable = Single.fromCallable(() -> SilenceScanner.scan(context, media, from, to))
                 .subscribeOn(Schedulers.io())
@@ -280,7 +287,7 @@ public class MusicBreak {
                 continue;
             }
             double distance = Math.min(1.0,
-                    Math.abs((silence.startMs + silence.endMs) / 2 - point) / (double) Math.max(windowMs, 1));
+                    Math.abs((silence.startMs + silence.endMs) / 2 - point) / (double) Math.max(getWindow(point), 1));
             double score = Math.min(silence.getLength(), MAX_SCORED_SILENCE_MS) - DISTANCE_PENALTY_MS * distance;
             if (score > bestScore) {
                 bestScore = score;
@@ -334,12 +341,18 @@ public class MusicBreak {
                 && episodePlayer.getDeviceInfo().playbackType != DeviceInfo.PLAYBACK_TYPE_REMOTE;
     }
 
-    private void planBreaks(long mediaId, long position, long duration) {
-        plannedMediaId = mediaId;
+    private void planBreaks(FeedMedia media, long position, long duration) {
+        plannedMediaId = media.getId();
         breakPoints.clear();
+        timecodePoints.clear();
         handledAdStarts.clear();
         resetSilenceSearch();
         long interval = MusicBreakPreferences.getIntervalMillis(context);
+        List<Long> topicStarts = findTopicStarts(media, duration);
+        if (!topicStarts.isEmpty()) {
+            planTopicBreaks(topicStarts, position, duration, interval);
+            return;
+        }
         int parts = Math.max(1, Math.round((float) duration / interval));
         long spacing = duration / parts;
         windowMs = Math.min(MAX_WINDOW_MS, spacing / 4);
@@ -350,6 +363,61 @@ public class MusicBreak {
             }
         }
         Log.d(TAG, "Planned music breaks at " + breakPoints + " (window " + windowMs + ")");
+    }
+
+    private void planTopicBreaks(List<Long> topicStarts, long position, long duration, long interval) {
+        windowMs = Math.min(MAX_WINDOW_MS, interval / 4);
+        long segmentStart = 0;
+        for (int i = 0; i <= topicStarts.size(); i++) {
+            long segmentEnd = i < topicStarts.size() ? topicStarts.get(i) : duration;
+            int parts = Math.max(1, Math.round((float) (segmentEnd - segmentStart) / interval));
+            for (int j = 1; j < parts; j++) {
+                addBreakPoint(segmentStart + (segmentEnd - segmentStart) * j / parts, position);
+            }
+            if (i < topicStarts.size()) {
+                if (noteTimecodes.contains(segmentEnd)) {
+                    timecodePoints.add(segmentEnd);
+                }
+                addBreakPoint(segmentEnd, position);
+            }
+            segmentStart = segmentEnd;
+        }
+        Log.d(TAG, "Planned music breaks at topics " + topicStarts + ": " + breakPoints
+                + " (window " + windowMs + ", timecodes " + timecodePoints + ")");
+    }
+
+    private void addBreakPoint(long point, long position) {
+        if (point - getWindow(point) > position + MIN_LEAD_MS) {
+            breakPoints.add(point);
+        }
+    }
+
+    private long getWindow(long point) {
+        return timecodePoints.contains(point) ? TIMECODE_WINDOW_MS : windowMs;
+    }
+
+    private List<Long> findTopicStarts(FeedMedia media, long duration) {
+        Set<Long> starts = new TreeSet<>(noteTimecodes);
+        List<Chapter> chapters = media.getChapters();
+        if (chapters != null) {
+            for (int i = 0; i < chapters.size(); i++) {
+                if (isAdChapter(chapters.get(i)) || (i > 0 && isAdChapter(chapters.get(i - 1)))) {
+                    continue;
+                }
+                starts.add(chapters.get(i).getStart());
+            }
+        }
+        List<Long> topicStarts = new ArrayList<>();
+        for (long start : starts) {
+            if (start > 0 && start < duration) {
+                topicStarts.add(start);
+            }
+        }
+        return topicStarts;
+    }
+
+    private static boolean isAdChapter(Chapter chapter) {
+        return chapter.getTitle() != null && AD_CHAPTER.matcher(chapter.getTitle()).find();
     }
 
     private void measureEpisodeLevel(FeedMedia media, long duration) {
@@ -381,7 +449,6 @@ public class MusicBreak {
             notesDisposable.dispose();
             notesDisposable = null;
         }
-        noteTimecodes.clear();
         long mediaId = media.getId();
         long itemId = media.getItemId();
         notesDisposable = Single.fromCallable(() -> {
@@ -396,9 +463,10 @@ public class MusicBreak {
                 .observeOn(AndroidSchedulers.mainThread())
                 .subscribe(timecodes -> {
                     notesDisposable = null;
-                    if (mediaId == plannedMediaId) {
-                        noteTimecodes.addAll(timecodes);
+                    if (mediaId == plannedMediaId && !timecodes.isEmpty()) {
                         Log.d(TAG, "Timecodes in show notes: " + timecodes);
+                        noteTimecodes.addAll(timecodes);
+                        planBreaks(media, episodePlayer.getCurrentPosition(), episodePlayer.getDuration());
                     }
                 }, error -> {
                     notesDisposable = null;
@@ -441,16 +509,14 @@ public class MusicBreak {
         return volume;
     }
 
-    private long findChapterStart(FeedMedia media, long from, long to, long target) {
-        List<Long> starts = new ArrayList<>(noteTimecodes);
+    private static long findChapterStart(FeedMedia media, long from, long to, long target) {
         List<Chapter> chapters = media.getChapters();
-        if (chapters != null) {
-            for (Chapter chapter : chapters) {
-                starts.add(chapter.getStart());
-            }
+        if (chapters == null) {
+            return NO_SEEK;
         }
         long best = NO_SEEK;
-        for (long start : starts) {
+        for (Chapter chapter : chapters) {
+            long start = chapter.getStart();
             if (start > 0 && start >= from && start <= to
                     && (best == NO_SEEK || Math.abs(start - target) < Math.abs(best - target))) {
                 best = start;
