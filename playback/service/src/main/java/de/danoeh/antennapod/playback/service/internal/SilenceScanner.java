@@ -16,11 +16,13 @@ import java.nio.ByteOrder;
 import java.nio.ShortBuffer;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.List;
 
 /**
  * Decodes a part of an audio file to find the silent intervals of a downloaded episode, in episode time,
- * or the average level of speech or music.
+ * or the average level of speech or music. Besides pauses it finds jingles (a few seconds of steady level,
+ * unlike speech) and stereo stings in otherwise mono speech, which often mark a topic change.
  */
 public class SilenceScanner {
     private static final String TAG = "SilenceScanner";
@@ -31,14 +33,27 @@ public class SilenceScanner {
     private static final long TIMEOUT_US = 10_000;
     private static final long MAX_SCAN_TIME_MS = 20_000;
     private static final double LEVEL_GATE_DB = -45;
+    private static final double NO_SIDE_DB = -120;
+    private static final int BLOCK_FRAMES = 25;
+    private static final int STEADY_WINDOW_FRAMES = 50;
+    private static final double STEADY_MAX_STD_DB = 4.5;
+    private static final int JINGLE_MIN_BLOCKS = 4;
+    private static final double STEREO_MARGIN_DB = 20;
+    private static final int STEREO_MIN_BLOCKS = 2;
+
+    public static final int KIND_PAUSE = 0;
+    public static final int KIND_STEREO = 1;
+    public static final int KIND_JINGLE = 2;
 
     public static class Silence {
         public final long startMs;
         public final long endMs;
+        public final int kind;
 
-        Silence(long startMs, long endMs) {
+        Silence(long startMs, long endMs, int kind) {
             this.startMs = startMs;
             this.endMs = endMs;
+            this.kind = kind;
         }
 
         public long getLength() {
@@ -48,7 +63,7 @@ public class SilenceScanner {
         @NonNull
         @Override
         public String toString() {
-            return startMs + "-" + endMs;
+            return (kind == KIND_JINGLE ? "jingle " : kind == KIND_STEREO ? "stereo " : "") + startMs + "-" + endMs;
         }
     }
 
@@ -57,7 +72,9 @@ public class SilenceScanner {
         if (!media.localFileAvailable()) {
             return new ArrayList<>();
         }
-        List<Silence> silences = findSilences(decode(context, media.getLocalFileUrl(), fromMs, toMs));
+        List<long[]> levels = decode(context, media.getLocalFileUrl(), fromMs, toMs);
+        List<Silence> silences = findSilences(levels);
+        silences.addAll(findMarkers(levels));
         Log.d(TAG, "Silences between " + fromMs + " and " + toMs + ": " + silences);
         return silences;
     }
@@ -128,7 +145,8 @@ public class SilenceScanner {
     }
 
     /**
-     * Returns pairs of frame start time in microseconds and frame level in hundredths of dBFS.
+     * Returns frame start time in microseconds, frame level in hundredths of dBFS and the level of the side
+     * signal relative to the mid signal in hundredths of dB.
      */
     private static List<long[]> decodeLevels(MediaExtractor extractor, MediaCodec codec, long fromUs, long toUs) {
         List<long[]> levels = new ArrayList<>();
@@ -139,6 +157,9 @@ public class SilenceScanner {
         long deadline = System.currentTimeMillis() + MAX_SCAN_TIME_MS;
         long frameStartUs = -1;
         double frameSum = 0;
+        double midSum = 0;
+        double sideSum = 0;
+        double left = 0;
         int frameSamples = 0;
         while (System.currentTimeMillis() < deadline) {
             if (!inputDone) {
@@ -179,14 +200,24 @@ public class SilenceScanner {
                         }
                         double sample = samples.get() / 32768.0;
                         frameSum += sample * sample;
+                        if (channels == 2 && frameSamples % 2 == 0) {
+                            left = sample;
+                        } else if (channels == 2) {
+                            midSum += (left + sample) * (left + sample) / 4;
+                            sideSum += (left - sample) * (left - sample) / 4;
+                        }
                         frameSamples++;
                         index++;
                         if (frameSamples >= samplesPerFrame) {
                             double rms = Math.sqrt(frameSum / frameSamples);
                             double db = 20 * Math.log10(Math.max(rms, 1e-6));
-                            levels.add(new long[]{frameStartUs, Math.round(db * 100)});
+                            double sideDb = channels != 2 ? NO_SIDE_DB : Math.max(NO_SIDE_DB,
+                                    10 * Math.log10(Math.max(sideSum, 1e-14) / Math.max(midSum, 1e-12)));
+                            levels.add(new long[]{frameStartUs, Math.round(db * 100), Math.round(sideDb * 100)});
                             frameStartUs = -1;
                             frameSum = 0;
+                            midSum = 0;
+                            sideSum = 0;
                             frameSamples = 0;
                         }
                     }
@@ -231,7 +262,77 @@ public class SilenceScanner {
 
     private static void addIfLongEnough(List<Silence> silences, long startUs, long endUs) {
         if ((endUs - startUs) / 1000 >= MIN_SILENCE_MS) {
-            silences.add(new Silence(startUs / 1000, endUs / 1000));
+            silences.add(new Silence(startUs / 1000, endUs / 1000, KIND_PAUSE));
         }
+    }
+
+    private static List<Silence> findMarkers(List<long[]> levels) {
+        List<Silence> markers = new ArrayList<>();
+        int blocks = levels.size() / BLOCK_FRAMES;
+        double[] blockLevel = new double[blocks];
+        double[] blockSide = new double[blocks];
+        boolean[] steady = new boolean[blocks];
+        List<Double> loudSides = new ArrayList<>();
+        for (int b = 0; b < blocks; b++) {
+            blockLevel[b] = median(levels, b * BLOCK_FRAMES, (b + 1) * BLOCK_FRAMES, 1);
+            blockSide[b] = median(levels, b * BLOCK_FRAMES, (b + 1) * BLOCK_FRAMES, 2);
+            int from = Math.max(0, b * BLOCK_FRAMES - STEADY_WINDOW_FRAMES / 4);
+            int to = Math.min(levels.size(), from + STEADY_WINDOW_FRAMES);
+            steady[b] = blockLevel[b] > LEVEL_GATE_DB && standardDeviation(levels, from, to) < STEADY_MAX_STD_DB;
+            if (blockLevel[b] > LEVEL_GATE_DB) {
+                loudSides.add(blockSide[b]);
+            }
+        }
+        if (loudSides.isEmpty()) {
+            return markers;
+        }
+        Collections.sort(loudSides);
+        double baseSide = loudSides.get(loudSides.size() / 2);
+        boolean[] stereo = new boolean[blocks];
+        for (int b = 0; b < blocks; b++) {
+            stereo[b] = blockLevel[b] > LEVEL_GATE_DB && blockSide[b] > baseSide + STEREO_MARGIN_DB;
+        }
+        addRuns(markers, levels, steady, JINGLE_MIN_BLOCKS, KIND_JINGLE);
+        addRuns(markers, levels, stereo, STEREO_MIN_BLOCKS, KIND_STEREO);
+        return markers;
+    }
+
+    private static void addRuns(List<Silence> markers, List<long[]> levels, boolean[] blocks, int minBlocks,
+                                int kind) {
+        int runStart = -1;
+        for (int b = 0; b <= blocks.length; b++) {
+            boolean inRun = b < blocks.length && blocks[b];
+            if (inRun && runStart < 0) {
+                runStart = b;
+            } else if (!inRun && runStart >= 0) {
+                if (b - runStart >= minBlocks) {
+                    long startUs = levels.get(runStart * BLOCK_FRAMES)[0];
+                    long endUs = levels.get(b * BLOCK_FRAMES - 1)[0] + FRAME_US;
+                    markers.add(new Silence(startUs / 1000, endUs / 1000, kind));
+                }
+                runStart = -1;
+            }
+        }
+    }
+
+    private static double median(List<long[]> levels, int from, int to, int field) {
+        long[] values = new long[to - from];
+        for (int i = from; i < to; i++) {
+            values[i - from] = levels.get(i)[field];
+        }
+        Arrays.sort(values);
+        return values[values.length / 2] / 100.0;
+    }
+
+    private static double standardDeviation(List<long[]> levels, int from, int to) {
+        double sum = 0;
+        double sumSquares = 0;
+        for (int i = from; i < to; i++) {
+            double db = levels.get(i)[1] / 100.0;
+            sum += db;
+            sumSquares += db * db;
+        }
+        double mean = sum / (to - from);
+        return Math.sqrt(Math.max(0, sumSquares / (to - from) - mean * mean));
     }
 }

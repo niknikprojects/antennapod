@@ -45,7 +45,8 @@ import java.util.regex.Pattern;
 /**
  * Splits each episode into parts of roughly the configured interval and plays a random local
  * music track between them, preferably at a chapter start near each break point, otherwise in
- * a pause of the speaker found by decoding the surroundings of the break point in advance.
+ * a jingle, a stereo sting or else a pause of the speaker found by decoding the surroundings of the
+ * break point in advance.
  * Without a natural pause the episode stops at the break point. When the episode has chapters or
  * timecodes in the show notes, every topic change gets a track, at the chapter start or in the longest
  * pause near the timecode, and only topics longer than the interval are split further.
@@ -69,6 +70,7 @@ public class MusicBreak {
     private static final long MAX_PAUSE_OFFSET_MS = 300;
     private static final long MAX_SCORED_SILENCE_MS = 2000;
     private static final double DISTANCE_PENALTY_MS = 150;
+    private static final double MARKER_SCORE = 10_000;
     private static final long EPISODE_LEVEL_SAMPLE_MS = 60_000;
     private static final double DEFAULT_EPISODE_LEVEL_DB = -20;
     private static final float MIN_MUSIC_VOLUME = 0.05f;
@@ -288,7 +290,8 @@ public class MusicBreak {
             }
             double distance = Math.min(1.0,
                     Math.abs((silence.startMs + silence.endMs) / 2 - point) / (double) Math.max(getWindow(point), 1));
-            double score = Math.min(silence.getLength(), MAX_SCORED_SILENCE_MS) - DISTANCE_PENALTY_MS * distance;
+            double score = silence.kind * MARKER_SCORE
+                    + Math.min(silence.getLength(), MAX_SCORED_SILENCE_MS) - DISTANCE_PENALTY_MS * distance;
             if (score > bestScore) {
                 bestScore = score;
                 silenceTarget = silence;
@@ -306,6 +309,9 @@ public class MusicBreak {
     }
 
     private static long getPauseAt(SilenceScanner.Silence silence) {
+        if (silence.kind != SilenceScanner.KIND_PAUSE) {
+            return silence.startMs;
+        }
         return silence.startMs + Math.min(MAX_PAUSE_OFFSET_MS, silence.getLength() / 3);
     }
 
