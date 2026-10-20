@@ -50,9 +50,12 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.TimeUnit;
 
 public class SyncService extends Worker {
     public static final String TAG = "SyncService";
+    private static final long MAX_DEFER_MS = TimeUnit.DAYS.toMillis(30);
+    private static final int MAX_DEFERRED_ACTIONS = 5000;
 
     private static boolean currentlyActive = false;
     private final SynchronizationQueueStorage synchronizationQueueStorage;
@@ -221,8 +224,9 @@ public class SyncService extends Worker {
         EventBus.getDefault().postSticky(new SyncServiceEvent(R.string.sync_status_episodes_download));
         EpisodeActionChanges getResponse = syncServiceImpl.getEpisodeActionChanges(lastSync);
         long newTimeStamp = getResponse.getTimestamp();
-        List<EpisodeAction> remoteActions = getResponse.getEpisodeActions();
-        processEpisodeActions(remoteActions);
+        List<EpisodeAction> remoteActions = new ArrayList<>(synchronizationQueueStorage.getDeferredEpisodeActions());
+        remoteActions.addAll(getResponse.getEpisodeActions());
+        synchronizationQueueStorage.setDeferredEpisodeActions(processEpisodeActions(remoteActions));
 
         // upload local actions
         EventBus.getDefault().postSticky(new SyncServiceEvent(R.string.sync_status_episodes_upload));
@@ -262,11 +266,18 @@ public class SyncService extends Worker {
         SynchronizationSettings.setLastEpisodeActionSynchronizationAttemptTimestamp(newTimeStamp);
     }
 
-    private synchronized void processEpisodeActions(List<EpisodeAction> remoteActions) {
+    /**
+     * Applies the remote play actions and returns those for episodes that are not in the local database yet.
+     * Another device often plays an episode before this one has refreshed the feed. The server only sends
+     * actions newer than the last sync, so these are kept and retried until the episode shows up.
+     */
+    private synchronized List<EpisodeAction> processEpisodeActions(List<EpisodeAction> remoteActions) {
         Log.d(TAG, "Processing " + remoteActions.size() + " actions");
+        List<EpisodeAction> deferredActions = new ArrayList<>();
         if (remoteActions.isEmpty()) {
-            return;
+            return deferredActions;
         }
+        long deferUntilMs = System.currentTimeMillis() - MAX_DEFER_MS;
 
         Map<Pair<String, String>, EpisodeAction> playActionsToUpdate = EpisodeActionFilter
                 .getRemoteActionsOverridingLocalActions(remoteActions,
@@ -277,7 +288,13 @@ public class SyncService extends Worker {
             String guid = GuidValidator.isValidGuid(action.getGuid()) ? action.getGuid() : null;
             FeedItem feedItem = DBReader.getFeedItemByGuidOrEpisodeUrl(guid, action.getEpisode());
             if (feedItem == null) {
-                Log.i(TAG, "Unknown feed item: " + action);
+                if (action.getTimestamp() != null && action.getTimestamp().getTime() > deferUntilMs
+                        && deferredActions.size() < MAX_DEFERRED_ACTIONS) {
+                    Log.i(TAG, "Unknown feed item, retrying on next sync: " + action);
+                    deferredActions.add(action);
+                } else {
+                    Log.i(TAG, "Unknown feed item: " + action);
+                }
                 continue;
             }
             if (feedItem.getMedia() == null) {
@@ -305,6 +322,7 @@ public class SyncService extends Worker {
         DBWriter.removeQueueItem(getApplicationContext(), false, queueToBeRemoved.toArray());
         DBReader.loadFeedDataOfFeedItemList(updatedItems);
         DBWriter.setItemList(updatedItems);
+        return deferredActions;
     }
 
     private void clearErrorNotifications() {

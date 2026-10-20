@@ -6,6 +6,7 @@ import android.content.SharedPreferences;
 import de.danoeh.antennapod.net.sync.serviceinterface.EpisodeAction;
 import org.json.JSONArray;
 import org.json.JSONException;
+import org.json.JSONObject;
 
 import java.util.ArrayList;
 import java.util.Collection;
@@ -19,6 +20,7 @@ public class SynchronizationQueueStorage {
     private static final String QUEUED_EPISODE_ACTIONS = "sync_queued_episode_actions";
     private static final String QUEUED_FEEDS_REMOVED = "sync_removed";
     private static final String QUEUED_FEEDS_ADDED = "sync_added";
+    private static final String DEFERRED_EPISODE_ACTIONS = "sync_deferred_episode_actions";
     private final SharedPreferences sharedPreferences;
 
     public SynchronizationQueueStorage(Context context) {
@@ -38,6 +40,37 @@ public class SynchronizationQueueStorage {
             e.printStackTrace();
         }
         return actions;
+    }
+
+    /**
+     * Remote actions for episodes that were not in the local database yet, kept to be applied
+     * on a later sync once the feed has been refreshed.
+     */
+    public ArrayList<EpisodeAction> getDeferredEpisodeActions() {
+        ArrayList<EpisodeAction> actions = new ArrayList<>();
+        try {
+            JSONArray deferred = new JSONArray(getSharedPreferences().getString(DEFERRED_EPISODE_ACTIONS, "[]"));
+            for (int i = 0; i < deferred.length(); i++) {
+                EpisodeAction action = EpisodeAction.readFromJsonObject(deferred.getJSONObject(i));
+                if (action != null) {
+                    actions.add(action);
+                }
+            }
+        } catch (JSONException e) {
+            e.printStackTrace();
+        }
+        return actions;
+    }
+
+    public void setDeferredEpisodeActions(List<EpisodeAction> actions) {
+        JSONArray deferred = new JSONArray();
+        for (EpisodeAction action : actions) {
+            JSONObject object = action.writeToJsonObject();
+            if (object != null) {
+                deferred.put(object);
+            }
+        }
+        getSharedPreferences().edit().putString(DEFERRED_EPISODE_ACTIONS, deferred.toString()).apply();
     }
 
     public ArrayList<String> getQueuedRemovedFeeds() {
@@ -90,6 +123,7 @@ public class SynchronizationQueueStorage {
                 .putString(QUEUED_EPISODE_ACTIONS, "[]")
                 .putString(QUEUED_FEEDS_ADDED, "[]")
                 .putString(QUEUED_FEEDS_REMOVED, "[]")
+                .putString(DEFERRED_EPISODE_ACTIONS, "[]")
                 .apply();
 
     }
