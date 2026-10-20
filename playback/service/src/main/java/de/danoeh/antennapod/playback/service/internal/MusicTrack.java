@@ -29,6 +29,9 @@ public class MusicTrack {
     public final byte[] artwork;
     /** Average level in dBFS of a part from the middle of the track, NaN if unknown. */
     public final double levelDb;
+    /** Tracks the picker chose from and how many of them were still unplayed this round, -1 if unknown. */
+    public int poolSize = -1;
+    public int leftInRound = -1;
 
     private MusicTrack(Uri uri, String title, @Nullable String artist, @Nullable String album,
                        @Nullable byte[] artwork, double levelDb) {

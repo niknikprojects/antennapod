@@ -27,8 +27,20 @@ public class MusicBreakTrackPicker {
     private static final long MIN_DURATION_MS = 30_000;
     private static final Random RANDOM = new Random();
 
+    public static class Pick {
+        public final Uri uri;
+        public final int poolSize;
+        public final int leftInRound;
+
+        Pick(Uri uri, int poolSize, int leftInRound) {
+            this.uri = uri;
+            this.poolSize = poolSize;
+            this.leftInRound = leftInRound;
+        }
+    }
+
     @Nullable
-    public static Uri pick(@NonNull Context context, @Nullable Uri previous) {
+    public static Pick pick(@NonNull Context context, @Nullable Uri previous) {
         List<Uri> tracks = MusicBreakPreferences.SOURCE_ALL.equals(MusicBreakPreferences.getSource(context))
                 ? queryMediaStore(context) : scanFolders(context);
         if (tracks.isEmpty()) {
@@ -59,7 +71,7 @@ public class MusicBreakTrackPicker {
         played.add(picked.toString());
         MusicBreakPreferences.setPlayedTracks(context, played);
         Log.d(TAG, "Picked " + picked + ", " + (candidates.size() - 1) + " of " + tracks.size() + " left this round");
-        return picked;
+        return new Pick(picked, tracks.size(), candidates.size() - 1);
     }
 
     private static List<Uri> queryMediaStore(Context context) {

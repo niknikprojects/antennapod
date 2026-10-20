@@ -102,6 +102,10 @@ public class MusicBreak {
     private Disposable pickerDisposable;
     @Nullable
     private Uri lastTrack;
+    @Nullable
+    private MusicTrack preparedTrack;
+    @Nullable
+    private Disposable prepareDisposable;
     private double episodeLevelDb = Double.NaN;
     @Nullable
     private Disposable levelDisposable;
@@ -148,6 +152,7 @@ public class MusicBreak {
             measureEpisodeLevel(media, episodePlayer.getDuration());
             loadNoteTimecodes(media, episodePlayer.getDuration());
         }
+        prepareNextTrack();
         while (!breakPoints.isEmpty() && breakPoints.get(0) + getWindow(breakPoints.get(0)) < position) {
             breakPoints.remove(0);
             resetSilenceSearch();
@@ -539,16 +544,67 @@ public class MusicBreak {
         episodePlayer.pause();
         notifyChanged();
         handler.post(progressUpdate);
-        pickerDisposable = Maybe.fromCallable(() -> {
-            Uri uri = MusicBreakTrackPicker.pick(context, lastTrack);
-            return uri == null ? null : MusicTrack.load(context, uri);
-        })
-                .subscribeOn(Schedulers.io())
-                .observeOn(AndroidSchedulers.mainThread())
+        if (preparedTrack != null) {
+            MusicTrack prepared = preparedTrack;
+            preparedTrack = null;
+            playTrack(prepared);
+            return;
+        }
+        if (prepareDisposable != null) {
+            // The prepared track starts as soon as it is loaded, see prepareNextTrack
+            return;
+        }
+        pickerDisposable = loadNextTrack()
                 .subscribe(this::playTrack, error -> {
                     Log.e(TAG, "Unable to pick track", error);
                     finish(true);
                 }, () -> finish(true));
+    }
+
+    /**
+     * Picks and loads the next track while the episode plays. Scanning the music folders and measuring
+     * the level of the track takes seconds, which would otherwise be silence at the start of the break.
+     */
+    private void prepareNextTrack() {
+        if (preparedTrack != null || prepareDisposable != null) {
+            return;
+        }
+        prepareDisposable = loadNextTrack()
+                .subscribe(loaded -> {
+                    prepareDisposable = null;
+                    if (active && track == null && musicPlayer == null) {
+                        playTrack(loaded);
+                    } else {
+                        preparedTrack = loaded;
+                    }
+                }, error -> {
+                    Log.e(TAG, "Unable to prepare track", error);
+                    prepareDisposable = null;
+                    if (active && track == null) {
+                        finish(true);
+                    }
+                }, () -> {
+                    prepareDisposable = null;
+                    if (active && track == null) {
+                        finish(true);
+                    }
+                });
+    }
+
+    private Maybe<MusicTrack> loadNextTrack() {
+        Uri previous = lastTrack;
+        return Maybe.fromCallable(() -> {
+            MusicBreakTrackPicker.Pick pick = MusicBreakTrackPicker.pick(context, previous);
+            if (pick == null) {
+                return null;
+            }
+            MusicTrack loaded = MusicTrack.load(context, pick.uri);
+            loaded.poolSize = pick.poolSize;
+            loaded.leftInRound = pick.leftInRound;
+            return loaded;
+        })
+                .subscribeOn(Schedulers.io())
+                .observeOn(AndroidSchedulers.mainThread());
     }
 
     private void playTrack(MusicTrack newTrack) {
@@ -741,6 +797,11 @@ public class MusicBreak {
             notesDisposable.dispose();
             notesDisposable = null;
         }
+        if (prepareDisposable != null) {
+            prepareDisposable.dispose();
+            prepareDisposable = null;
+        }
+        preparedTrack = null;
         cancel();
     }
 }

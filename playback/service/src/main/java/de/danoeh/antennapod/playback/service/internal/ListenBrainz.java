@@ -100,6 +100,10 @@ public class ListenBrainz {
         if (durationMs > 0) {
             info.put("duration_ms", durationMs);
         }
+        if (track.poolSize >= 0) {
+            info.put("musicbreak_pool_size", track.poolSize);
+            info.put("musicbreak_left_in_round", track.leftInRound);
+        }
         JSONObject metadata = new JSONObject()
                 .put("artist_name", track.artist)
                 .put("track_name", track.title)
