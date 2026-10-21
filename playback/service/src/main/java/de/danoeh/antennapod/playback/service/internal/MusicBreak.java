@@ -95,6 +95,7 @@ public class MusicBreak {
     private final List<Long> noteTimecodes = new ArrayList<>();
     private final Set<Long> timecodePoints = new HashSet<>();
     private long plannedMediaId = -1;
+    private long plannedInterval = -1;
     private long windowMs = 0;
     private boolean active = false;
     private long resumePosition = NO_SEEK;
@@ -162,6 +163,8 @@ public class MusicBreak {
             planBreaks(media, position, episodePlayer.getDuration());
             measureEpisodeLevel(media, episodePlayer.getDuration());
             loadNoteTimecodes(media, episodePlayer.getDuration());
+        } else if (MusicBreakPreferences.getIntervalMillis(context) != plannedInterval) {
+            planBreaks(media, position, episodePlayer.getDuration());
         }
         prepareNextTrack();
         while (!breakPoints.isEmpty() && breakPoints.get(0) + getWindow(breakPoints.get(0)) < position) {
@@ -384,6 +387,7 @@ public class MusicBreak {
         handledAdStarts.clear();
         resetSilenceSearch();
         long interval = MusicBreakPreferences.getIntervalMillis(context);
+        plannedInterval = interval;
         List<Long> topicStarts = findTopicStarts(media, duration);
         if (!topicStarts.isEmpty()) {
             planTopicBreaks(topicStarts, position, duration, interval);
