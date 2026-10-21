@@ -44,6 +44,10 @@ public class AboutFragment extends AnimatedPreferenceFragment {
             }
             return true;
         });
+        findPreference("about_source_code").setOnPreferenceClickListener((preference) -> {
+            IntentUtils.openInBrowser(getContext(), "https://github.com/niknikprojects/antennapod");
+            return true;
+        });
         findPreference("about_contributors").setOnPreferenceClickListener((preference) -> {
             getParentFragmentManager().beginTransaction()
                     .replace(R.id.settingsContainer, new ContributorsPagerFragment())

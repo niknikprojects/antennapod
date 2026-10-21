@@ -619,6 +619,7 @@
 
     <!-- Report bug -->
     <string name="report_bug_title">Report bug</string>
+    <string name="report_bug_message_fork">Sorry to hear something isn’t working. Musikpaus is a modified version of AntennaPod, so please report problems on its GitHub page and not to the AntennaPod team.</string>
     <string name="report_bug_message">Sorry to hear something isn’t working. We’d love your help to improve AntennaPod. Please check our forum or GitHub to see if the issue has already been reported. If not, let us know and we’ll investigate.</string>
     <string name="report_bug_device_info_title">Device</string>
     <string name="report_bug_attrib_app_version">App version</string>
@@ -640,6 +641,8 @@
     <string name="translators">Translators</string>
     <string name="special_thanks">Special thanks</string>
     <string name="privacy_policy">Privacy policy</string>
+    <string name="fork_source_code">Source code</string>
+    <string name="fork_source_code_summary">Musikpaus is a modified version of AntennaPod and is not supported by the AntennaPod team</string>
     <string name="licenses">Licenses</string>
     <string name="licenses_summary">AntennaPod uses other great software</string>
 
