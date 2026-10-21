@@ -82,6 +82,8 @@ public class MusicBreak {
     private static final Pattern TIMECODE = Pattern.compile("\\b(?:(\\d+):)?(\\d+):(\\d{2})\\b");
     private static final int MIN_NOTE_TIMECODES = 2;
     private static final long TIMECODE_WINDOW_MS = 15_000;
+    private static final double MIN_GAP_FRACTION = 0.8;
+    private static final long MAX_TICK_STEP_MS = 10_000;
 
     private final Context context;
     private final Player episodePlayer;
@@ -124,6 +126,9 @@ public class MusicBreak {
     private MusicTrack track;
     private long trackStartedAtMs;
     private boolean playingNowSubmitted = false;
+    private long episodeSinceBreakMs = 0;
+    private long lastTickMediaId = -1;
+    private long lastTickPosition = NO_SEEK;
     @Nullable
     private Listener listener;
 
@@ -146,6 +151,12 @@ public class MusicBreak {
             return;
         }
         long position = episodePlayer.getCurrentPosition();
+        if (media.getId() == lastTickMediaId && position > lastTickPosition
+                && position - lastTickPosition <= MAX_TICK_STEP_MS) {
+            episodeSinceBreakMs += position - lastTickPosition;
+        }
+        lastTickMediaId = media.getId();
+        lastTickPosition = position;
         if (media.getId() != plannedMediaId) {
             noteTimecodes.clear();
             planBreaks(media, position, episodePlayer.getDuration());
@@ -166,6 +177,11 @@ public class MusicBreak {
         long point = breakPoints.get(0);
         long window = getWindow(point);
         if (position < point - window - SCAN_LEAD_MS) {
+            return;
+        }
+        if (episodeSinceBreakMs + point - position < getMinGap()) {
+            Log.d(TAG, "Skipping break at " + point + ", only " + episodeSinceBreakMs + " ms since the last one");
+            consumeBreakPoint();
             return;
         }
         long chapterStart = findChapterStart(media, Math.max(point - window, position - CHAPTER_TOLERANCE_MS),
@@ -342,8 +358,17 @@ public class MusicBreak {
         if (active) {
             return;
         }
+        if (episodeSinceBreakMs < getMinGap()) {
+            Log.d(TAG, "No music break between episodes, only " + episodeSinceBreakMs + " ms since the last one");
+            episodePlayer.setPlayWhenReady(true);
+            return;
+        }
         Log.d(TAG, "Music break between episodes");
         start(NO_SEEK);
+    }
+
+    private long getMinGap() {
+        return (long) (MusicBreakPreferences.getIntervalMillis(context) * MIN_GAP_FRACTION);
     }
 
     public boolean canBreak(@Nullable FeedMedia media) {
@@ -539,6 +564,7 @@ public class MusicBreak {
     private void start(long resumeAt) {
         cancelPendingPause();
         active = true;
+        episodeSinceBreakMs = 0;
         resumePosition = resumeAt;
         track = null;
         episodePlayer.pause();
