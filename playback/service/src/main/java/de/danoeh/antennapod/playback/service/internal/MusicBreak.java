@@ -67,7 +67,8 @@ public class MusicBreak {
     private static final long NO_SEEK = -1;
     private static final long SCAN_LEAD_MS = 30_000;
     private static final long AD_LOOKAHEAD_MS = 30_000;
-    private static final long MAX_PAUSE_OFFSET_MS = 300;
+    private static final long MAX_PAUSE_OFFSET_MS = 50;
+    private static final long SCHEDULE_MARGIN_MS = 300;
     private static final long MAX_SCORED_SILENCE_MS = 2000;
     private static final double DISTANCE_PENALTY_MS = 150;
     private static final double MARKER_SCORE = 10_000;
@@ -309,7 +310,7 @@ public class MusicBreak {
         long position = episodePlayer.getCurrentPosition();
         double bestScore = Double.NEGATIVE_INFINITY;
         for (SilenceScanner.Silence silence : silences) {
-            if (getPauseAt(silence) <= position + MAX_PAUSE_OFFSET_MS) {
+            if (getPauseAt(silence) <= position + SCHEDULE_MARGIN_MS) {
                 continue;
             }
             double distance = Math.min(1.0,
@@ -336,7 +337,8 @@ public class MusicBreak {
         if (silence.kind != SilenceScanner.KIND_PAUSE) {
             return silence.startMs;
         }
-        return silence.startMs + Math.min(MAX_PAUSE_OFFSET_MS, silence.getLength() / 3);
+        // Right after the last word: further in, short pauses in fast speech end before the episode stops
+        return silence.startMs + Math.min(MAX_PAUSE_OFFSET_MS, silence.getLength() / 4);
     }
 
     private void consumeBreakPoint() {
