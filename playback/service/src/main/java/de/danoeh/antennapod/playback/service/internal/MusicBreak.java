@@ -53,7 +53,7 @@ import java.util.regex.Pattern;
  * Chapters that look like ads are replaced by a track. The end of an episode counts
  * as a break when the next episode starts automatically. Pauses are scheduled as player messages,
  * so they happen exactly at the position.
- * The music volume is lowered to the measured level of the episode (or a typical podcast level).
+ * The music volume is lowered to the measured loudness of the episode (or a typical podcast loudness).
  * Tracks are submitted to ListenBrainz when a user token is set.
  */
 @OptIn(markerClass = UnstableApi.class)
@@ -72,7 +72,7 @@ public class MusicBreak {
     private static final double DISTANCE_PENALTY_MS = 150;
     private static final double MARKER_SCORE = 10_000;
     private static final long EPISODE_LEVEL_SAMPLE_MS = 60_000;
-    private static final double DEFAULT_EPISODE_LEVEL_DB = -20;
+    private static final double DEFAULT_EPISODE_LEVEL_DB = -16;
     private static final float MIN_MUSIC_VOLUME = 0.05f;
     private static final long LISTEN_MIN_MS = TimeUnit.MINUTES.toMillis(4);
     private static final Pattern AD_CHAPTER = Pattern.compile(
@@ -545,7 +545,7 @@ public class MusicBreak {
         double target = Double.isNaN(episodeLevelDb) ? DEFAULT_EPISODE_LEVEL_DB : episodeLevelDb;
         float volume = (float) Math.pow(10, (target - musicTrack.levelDb) / 20);
         volume = Math.max(MIN_MUSIC_VOLUME, Math.min(1f, volume * episodePlayer.getVolume()));
-        Log.d(TAG, "Music level " + musicTrack.levelDb + " dB, episode " + target + " dB, volume " + volume);
+        Log.d(TAG, "Music " + musicTrack.levelDb + " LUFS, episode " + target + " LUFS, volume " + volume);
         return volume;
     }
 

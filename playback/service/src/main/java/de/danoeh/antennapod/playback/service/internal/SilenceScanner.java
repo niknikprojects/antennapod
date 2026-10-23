@@ -33,6 +33,10 @@ public class SilenceScanner {
     private static final long TIMEOUT_US = 10_000;
     private static final long MAX_SCAN_TIME_MS = 20_000;
     private static final double LEVEL_GATE_DB = -45;
+    private static final double LUFS_OFFSET_DB = -0.691;
+    private static final double ABSOLUTE_GATE_LUFS = -70;
+    private static final double RELATIVE_GATE_DB = -10;
+    private static final int GATE_BLOCK_FRAMES = 20;
     private static final double NO_SIDE_DB = -120;
     private static final int BLOCK_FRAMES = 25;
     private static final int STEADY_WINDOW_FRAMES = 50;
@@ -80,22 +84,73 @@ public class SilenceScanner {
     }
 
     /**
-     * Returns the average level in dBFS of the non-silent parts between the given positions,
-     * or NaN if the file can not be decoded.
+     * Returns the loudness in LUFS between the given positions, or NaN if the file can not be decoded.
+     * Like EBU R128 it is K-weighted and gated in 400 ms blocks, so speech and compressed music
+     * that sound equally loud get the same value. Mono counts as played on both speakers.
      */
     public static double measureLevel(@NonNull Context context, @NonNull String file, long fromMs, long toMs) {
-        double energySum = 0;
-        int frames = 0;
-        for (long[] level : decode(context, file, fromMs, toMs)) {
-            double db = level[1] / 100.0;
-            if (db > LEVEL_GATE_DB) {
-                energySum += Math.pow(10, db / 10);
-                frames++;
+        List<long[]> levels = decode(context, file, fromMs, toMs);
+        List<Double> blocks = new ArrayList<>();
+        for (int i = 0; i + GATE_BLOCK_FRAMES <= levels.size(); i += GATE_BLOCK_FRAMES) {
+            double energy = 0;
+            for (int j = i; j < i + GATE_BLOCK_FRAMES; j++) {
+                energy += Math.pow(10, levels.get(j)[3] / 1000.0);
+            }
+            energy /= GATE_BLOCK_FRAMES;
+            if (toLufs(energy) > ABSOLUTE_GATE_LUFS) {
+                blocks.add(energy);
             }
         }
-        double result = frames == 0 ? Double.NaN : 10 * Math.log10(energySum / frames);
-        Log.d(TAG, "Level of " + file + " between " + fromMs + " and " + toMs + ": " + result + " dB");
+        double relativeGate = toLufs(average(blocks, Double.NEGATIVE_INFINITY)) + RELATIVE_GATE_DB;
+        double result = toLufs(average(blocks, relativeGate));
+        Log.d(TAG, "Loudness of " + file + " between " + fromMs + " and " + toMs + ": " + result + " LUFS");
         return result;
+    }
+
+    private static double average(List<Double> blocks, double gateLufs) {
+        double sum = 0;
+        int count = 0;
+        for (double energy : blocks) {
+            if (toLufs(energy) > gateLufs) {
+                sum += energy;
+                count++;
+            }
+        }
+        return count == 0 ? Double.NaN : sum / count;
+    }
+
+    private static double toLufs(double energy) {
+        return LUFS_OFFSET_DB + 10 * Math.log10(energy);
+    }
+
+    /**
+     * Coefficients b0, b1, b2, a1, a2 of the two K-weighting filters of ITU-R BS.1770 for the sample rate:
+     * a high shelf for the head and a high pass.
+     */
+    private static double[][] kWeighting(int sampleRate) {
+        double k = Math.tan(Math.PI * 1681.974450955533 / sampleRate);
+        double q = 0.7071752369554196;
+        double vh = Math.pow(10, 3.999843853973347 / 20);
+        double vb = Math.pow(vh, 0.4996667741545416);
+        double a0 = 1 + k / q + k * k;
+        double[] shelf = {(vh + vb * k / q + k * k) / a0, 2 * (k * k - vh) / a0, (vh - vb * k / q + k * k) / a0,
+                2 * (k * k - 1) / a0, (1 - k / q + k * k) / a0};
+        k = Math.tan(Math.PI * 38.13547087602444 / sampleRate);
+        q = 0.5003270373238773;
+        a0 = 1 + k / q + k * k;
+        double[] highPass = {1, -2, 1, 2 * (k * k - 1) / a0, (1 - k / q + k * k) / a0};
+        return new double[][]{shelf, highPass};
+    }
+
+    /** Runs a sample through a biquad with the state x1, x2, y1, y2 starting at the offset. */
+    private static double biquad(double[] c, double[] state, int offset, double x) {
+        double y = c[0] * x + c[1] * state[offset] + c[2] * state[offset + 1]
+                - c[3] * state[offset + 2] - c[4] * state[offset + 3];
+        state[offset + 1] = state[offset];
+        state[offset] = x;
+        state[offset + 3] = state[offset + 2];
+        state[offset + 2] = y;
+        return y;
     }
 
     private static List<long[]> decode(Context context, String file, long fromMs, long toMs) {
@@ -146,7 +201,8 @@ public class SilenceScanner {
 
     /**
      * Returns frame start time in microseconds, frame level in hundredths of dBFS and the level of the side
-     * signal relative to the mid signal in hundredths of dB.
+     * signal relative to the mid signal in hundredths of dB, and the K-weighted energy of all channels in
+     * thousandths of dB.
      */
     private static List<long[]> decodeLevels(MediaExtractor extractor, MediaCodec codec, long fromUs, long toUs) {
         List<long[]> levels = new ArrayList<>();
@@ -160,6 +216,9 @@ public class SilenceScanner {
         double midSum = 0;
         double sideSum = 0;
         double left = 0;
+        double kSum = 0;
+        double[][] kFilter = kWeighting(sampleRate);
+        double[] kState = new double[16];
         int frameSamples = 0;
         while (System.currentTimeMillis() < deadline) {
             if (!inputDone) {
@@ -186,6 +245,8 @@ public class SilenceScanner {
                 }
                 channels = outputFormat.getInteger(MediaFormat.KEY_CHANNEL_COUNT);
                 sampleRate = outputFormat.getInteger(MediaFormat.KEY_SAMPLE_RATE);
+                kFilter = kWeighting(sampleRate);
+                kState = new double[channels * 8];
             } else if (outputIndex >= 0) {
                 ByteBuffer output = codec.getOutputBuffer(outputIndex);
                 if (output != null && info.size > 0 && info.presentationTimeUs >= fromUs) {
@@ -200,6 +261,10 @@ public class SilenceScanner {
                         }
                         double sample = samples.get() / 32768.0;
                         frameSum += sample * sample;
+                        int state = frameSamples % channels * 8;
+                        double weighted = biquad(kFilter[1], kState, state + 4,
+                                biquad(kFilter[0], kState, state, sample));
+                        kSum += weighted * weighted;
                         if (channels == 2 && frameSamples % 2 == 0) {
                             left = sample;
                         } else if (channels == 2) {
@@ -213,11 +278,14 @@ public class SilenceScanner {
                             double db = 20 * Math.log10(Math.max(rms, 1e-6));
                             double sideDb = channels != 2 ? NO_SIDE_DB : Math.max(NO_SIDE_DB,
                                     10 * Math.log10(Math.max(sideSum, 1e-14) / Math.max(midSum, 1e-12)));
-                            levels.add(new long[]{frameStartUs, Math.round(db * 100), Math.round(sideDb * 100)});
+                            double kDb = 10 * Math.log10(Math.max(2 * kSum / frameSamples, 1e-14));
+                            levels.add(new long[]{frameStartUs, Math.round(db * 100), Math.round(sideDb * 100),
+                                    Math.round(kDb * 1000)});
                             frameStartUs = -1;
                             frameSum = 0;
                             midSum = 0;
                             sideSum = 0;
+                            kSum = 0;
                             frameSamples = 0;
                         }
                     }
