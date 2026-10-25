@@ -54,6 +54,7 @@ import java.util.regex.Pattern;
  * as a break when the next episode starts automatically. Pauses are scheduled as player messages,
  * so they happen exactly at the position.
  * The music volume is lowered to the measured loudness of the episode (or a typical podcast loudness).
+ * The podcast's own volume adaption does not apply to the music, so it can be used to balance the two.
  * Tracks are submitted to ListenBrainz when a user token is set.
  */
 @OptIn(markerClass = UnstableApi.class)
@@ -546,7 +547,7 @@ public class MusicBreak {
         }
         double target = Double.isNaN(episodeLevelDb) ? DEFAULT_EPISODE_LEVEL_DB : episodeLevelDb;
         float volume = (float) Math.pow(10, (target - musicTrack.levelDb) / 20);
-        volume = Math.max(MIN_MUSIC_VOLUME, Math.min(1f, volume * episodePlayer.getVolume()));
+        volume = Math.max(MIN_MUSIC_VOLUME, Math.min(1f, volume));
         Log.d(TAG, "Music " + musicTrack.levelDb + " LUFS, episode " + target + " LUFS, volume " + volume);
         return volume;
     }

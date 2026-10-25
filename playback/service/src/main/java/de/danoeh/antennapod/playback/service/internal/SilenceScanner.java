@@ -94,7 +94,7 @@ public class SilenceScanner {
         for (int i = 0; i + GATE_BLOCK_FRAMES <= levels.size(); i += GATE_BLOCK_FRAMES) {
             double energy = 0;
             for (int j = i; j < i + GATE_BLOCK_FRAMES; j++) {
-                energy += Math.pow(10, levels.get(j)[3] / 1000.0);
+                energy += Math.pow(10, levels.get(j)[3] / 10000.0);  // stored as dB × 1000, energy = 10^(dB / 10)
             }
             energy /= GATE_BLOCK_FRAMES;
             if (toLufs(energy) > ABSOLUTE_GATE_LUFS) {
