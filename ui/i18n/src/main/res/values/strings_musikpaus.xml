@@ -17,4 +17,13 @@
     <string name="pref_music_break_listenbrainz_sum_off">Not set up. Add a user token to submit listens of music break tracks</string>
     <string name="pref_music_break_listenbrainz_sum_on">Listens of music break tracks are submitted</string>
     <string name="pref_music_break_listenbrainz_dialog">User token from listenbrainz.org/settings. Leave empty to turn off.</string>
+    <string name="pref_music_break_played_title">Played this round</string>
+    <string name="pref_music_break_played_sum">Tracks played since every track was last played, with the time</string>
+    <string name="pref_music_break_upcoming_title">Upcoming</string>
+    <string name="pref_music_break_upcoming_sum">Tracks left this round, in the order they will play</string>
+    <string name="music_break_played_dialog_title">Played: %1$d of %2$d</string>
+    <string name="music_break_upcoming_dialog_title">Upcoming: %1$d of %2$d</string>
+    <string name="music_break_round_empty">No tracks</string>
+    <string name="music_break_not_started">not played yet</string>
+    <string name="music_break_time_unknown">earlier</string>
 </resources>

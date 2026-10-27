@@ -83,6 +83,37 @@ public class MusicTrack {
         return new MusicTrack(uri, title, artist, album, artwork, levelDb);
     }
 
+    /** "Artist – Title" from the tags, or the file name. */
+    @NonNull
+    public static String readName(@NonNull Context context, @NonNull Uri uri) {
+        String title = null;
+        String artist = null;
+        MediaMetadataRetriever retriever = new MediaMetadataRetriever();
+        try {
+            retriever.setDataSource(context, uri);
+            title = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_TITLE);
+            artist = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ARTIST);
+        } catch (Exception e) {
+            Log.w(TAG, "Unable to read metadata of " + uri, e);
+        } finally {
+            try {
+                retriever.release();
+            } catch (Exception e) {
+                Log.w(TAG, "Unable to release retriever", e);
+            }
+        }
+        return getName(TextUtils.isEmpty(title) ? getFileName(context, uri) : title, artist);
+    }
+
+    @NonNull
+    public String getName() {
+        return getName(title, artist);
+    }
+
+    private static String getName(String title, @Nullable String artist) {
+        return TextUtils.isEmpty(artist) ? title : artist + " – " + title;
+    }
+
     @Nullable
     private static byte[] scaleArtwork(@Nullable byte[] picture) {
         if (picture == null) {

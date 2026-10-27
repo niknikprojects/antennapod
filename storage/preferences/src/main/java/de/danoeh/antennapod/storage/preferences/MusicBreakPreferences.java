@@ -56,12 +56,9 @@ public class MusicBreakPreferences {
         return prefs(context).getString(PREF_LISTENBRAINZ_TOKEN, "").trim();
     }
 
+    /** Played tracks as remembered before the round was kept in a file. */
     @NonNull
     public static Set<String> getPlayedTracks(@NonNull Context context) {
         return new HashSet<>(prefs(context).getStringSet(PREF_PLAYED_TRACKS, new HashSet<>()));
-    }
-
-    public static void setPlayedTracks(@NonNull Context context, @NonNull Set<String> tracks) {
-        prefs(context).edit().putStringSet(PREF_PLAYED_TRACKS, new HashSet<>(tracks)).apply();
     }
 }

@@ -17,4 +17,13 @@
     <string name="pref_music_break_listenbrainz_sum_off">Inte inställt. Lägg in en användartoken för att skicka lyssningar av musikpausernas låtar</string>
     <string name="pref_music_break_listenbrainz_sum_on">Lyssningar av musikpausernas låtar skickas</string>
     <string name="pref_music_break_listenbrainz_dialog">Användartoken från listenbrainz.org/settings. Lämna tomt för att stänga av.</string>
+    <string name="pref_music_break_played_title">Spelade i omgången</string>
+    <string name="pref_music_break_played_sum">Låtar som spelats sedan alla låtar spelats senast, med tid</string>
+    <string name="pref_music_break_upcoming_title">Kommande</string>
+    <string name="pref_music_break_upcoming_sum">Låtar som är kvar i omgången, i den ordning de kommer</string>
+    <string name="music_break_played_dialog_title">Spelade: %1$d av %2$d</string>
+    <string name="music_break_upcoming_dialog_title">Kommande: %1$d av %2$d</string>
+    <string name="music_break_round_empty">Inga låtar</string>
+    <string name="music_break_not_started">ej spelad än</string>
+    <string name="music_break_time_unknown">tidigare</string>
 </resources>

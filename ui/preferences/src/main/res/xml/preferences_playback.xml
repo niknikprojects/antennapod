@@ -117,6 +117,16 @@
                 android:dependency="prefMusicBreakEnabled"
                 android:key="prefMusicBreakFoldersLauncher"
                 android:title="@string/pref_music_break_folders_title"/>
+        <Preference
+                android:dependency="prefMusicBreakEnabled"
+                android:key="prefMusicBreakPlayedLauncher"
+                android:summary="@string/pref_music_break_played_sum"
+                android:title="@string/pref_music_break_played_title"/>
+        <Preference
+                android:dependency="prefMusicBreakEnabled"
+                android:key="prefMusicBreakUpcomingLauncher"
+                android:summary="@string/pref_music_break_upcoming_sum"
+                android:title="@string/pref_music_break_upcoming_title"/>
         <SwitchPreferenceCompat
                 android:defaultValue="true"
                 android:dependency="prefMusicBreakEnabled"

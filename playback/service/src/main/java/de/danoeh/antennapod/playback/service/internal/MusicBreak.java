@@ -649,6 +649,9 @@ public class MusicBreak {
         track = newTrack;
         lastTrack = newTrack.uri;
         trackStartedAtMs = System.currentTimeMillis();
+        long startedAt = trackStartedAtMs;
+        Schedulers.io().scheduleDirect(() -> MusicBreakTrackPicker.markStarted(context, newTrack.uri,
+                newTrack.getName(), startedAt));
         playingNowSubmitted = false;
         ExoPlayer player = new ExoPlayer.Builder(context)
                 .setAudioAttributes(new AudioAttributes.Builder()

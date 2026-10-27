@@ -2,6 +2,7 @@ package de.danoeh.antennapod.ui.screen.preferences;
 
 import android.Manifest;
 import android.app.Activity;
+import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.content.res.Resources;
@@ -11,6 +12,7 @@ import android.os.Bundle;
 import android.provider.DocumentsContract;
 import android.text.InputType;
 import android.text.TextUtils;
+import android.text.format.DateUtils;
 import android.util.Log;
 import android.widget.Toast;
 import androidx.activity.result.ActivityResultLauncher;
@@ -23,11 +25,16 @@ import androidx.preference.ListPreference;
 import androidx.preference.Preference;
 import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 import de.danoeh.antennapod.R;
+import de.danoeh.antennapod.playback.service.internal.MusicBreakTrackPicker;
 import de.danoeh.antennapod.storage.preferences.MusicBreakPreferences;
 import de.danoeh.antennapod.storage.preferences.UserPreferences;
 import de.danoeh.antennapod.ui.preferences.screen.AnimatedPreferenceFragment;
 import de.danoeh.antennapod.ui.screen.feed.preferences.SkipPreferenceDialog;
 import de.danoeh.antennapod.ui.screen.playback.VariableSpeedDialog;
+import io.reactivex.rxjava3.android.schedulers.AndroidSchedulers;
+import io.reactivex.rxjava3.core.Single;
+import io.reactivex.rxjava3.disposables.Disposable;
+import io.reactivex.rxjava3.schedulers.Schedulers;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -40,6 +47,10 @@ public class PlaybackPreferencesFragment extends AnimatedPreferenceFragment {
     private static final String PREF_PLAYBACK_REWIND_DELTA_LAUNCHER = "prefPlaybackRewindDeltaLauncher";
     private static final String PREF_PLAYBACK_FAST_FORWARD_DELTA_LAUNCHER = "prefPlaybackFastForwardDeltaLauncher";
     private static final String PREF_MUSIC_BREAK_FOLDERS_LAUNCHER = "prefMusicBreakFoldersLauncher";
+    private static final String PREF_MUSIC_BREAK_PLAYED_LAUNCHER = "prefMusicBreakPlayedLauncher";
+    private static final String PREF_MUSIC_BREAK_UPCOMING_LAUNCHER = "prefMusicBreakUpcomingLauncher";
+
+    private Disposable roundDisposable;
 
     private final ActivityResultLauncher<Uri> addMusicFolderLauncher =
             registerForActivityResult(new ActivityResultContracts.OpenDocumentTree(), this::addMusicFolder);
@@ -67,6 +78,14 @@ public class PlaybackPreferencesFragment extends AnimatedPreferenceFragment {
     public void onStart() {
         super.onStart();
         ((PreferenceActivity) getActivity()).getSupportActionBar().setTitle(R.string.playback_pref);
+    }
+
+    @Override
+    public void onDestroy() {
+        super.onDestroy();
+        if (roundDisposable != null) {
+            roundDisposable.dispose();
+        }
     }
 
     private void setupPlaybackScreen() {
@@ -182,6 +201,14 @@ public class PlaybackPreferencesFragment extends AnimatedPreferenceFragment {
             return true;
         });
         updateMusicFoldersPreference();
+        requirePreference(PREF_MUSIC_BREAK_PLAYED_LAUNCHER).setOnPreferenceClickListener(preference -> {
+            showMusicBreakRound(true);
+            return true;
+        });
+        requirePreference(PREF_MUSIC_BREAK_UPCOMING_LAUNCHER).setOnPreferenceClickListener(preference -> {
+            showMusicBreakRound(false);
+            return true;
+        });
 
         EditTextPreference listenBrainzPref = requirePreference(MusicBreakPreferences.PREF_LISTENBRAINZ_TOKEN);
         listenBrainzPref.setOnBindEditTextListener(editText -> editText.setInputType(
@@ -190,6 +217,51 @@ public class PlaybackPreferencesFragment extends AnimatedPreferenceFragment {
                 TextUtils.isEmpty(((EditTextPreference) preference).getText())
                         ? R.string.pref_music_break_listenbrainz_sum_off
                         : R.string.pref_music_break_listenbrainz_sum_on));
+    }
+
+    private void showMusicBreakRound(boolean played) {
+        if (roundDisposable != null) {
+            roundDisposable.dispose();
+        }
+        Context context = requireContext().getApplicationContext();
+        roundDisposable = Single.fromCallable(() -> MusicBreakTrackPicker.getRound(context))
+                .subscribeOn(Schedulers.io())
+                .observeOn(AndroidSchedulers.mainThread())
+                .subscribe(round -> {
+                    int total = round.played.size() + round.upcoming.size();
+                    List<String> lines = new ArrayList<>();
+                    if (played) {
+                        // Latest first
+                        for (int i = round.played.size() - 1; i >= 0; i--) {
+                            MusicBreakTrackPicker.Entry entry = round.played.get(i);
+                            lines.add(formatPlayedAt(entry.playedAt) + " · " + entry.name);
+                        }
+                    } else {
+                        for (int i = 0; i < round.upcoming.size(); i++) {
+                            lines.add((i + 1) + ". " + round.upcoming.get(i).name);
+                        }
+                    }
+                    MaterialAlertDialogBuilder builder = new MaterialAlertDialogBuilder(requireContext())
+                            .setTitle(getString(played ? R.string.music_break_played_dialog_title
+                                    : R.string.music_break_upcoming_dialog_title, lines.size(), total))
+                            .setPositiveButton(R.string.close_label, null);
+                    if (lines.isEmpty()) {
+                        builder.setMessage(R.string.music_break_round_empty);
+                    } else {
+                        builder.setItems(lines.toArray(new String[0]), null);
+                    }
+                    builder.show();
+                }, error -> Log.e(TAG, "Unable to load the music break round", error));
+    }
+
+    private String formatPlayedAt(long playedAt) {
+        if (playedAt == MusicBreakTrackPicker.NOT_STARTED) {
+            return getString(R.string.music_break_not_started);
+        } else if (playedAt == MusicBreakTrackPicker.UNKNOWN_TIME) {
+            return getString(R.string.music_break_time_unknown);
+        }
+        return DateUtils.formatDateTime(requireContext(), playedAt, DateUtils.FORMAT_SHOW_DATE
+                | DateUtils.FORMAT_NUMERIC_DATE | DateUtils.FORMAT_NO_YEAR | DateUtils.FORMAT_SHOW_TIME);
     }
 
     private void updateMusicFoldersPreference() {
