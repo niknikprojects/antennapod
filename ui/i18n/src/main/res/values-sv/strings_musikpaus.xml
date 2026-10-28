@@ -33,4 +33,6 @@
     <string name="music_break_new_share_50">varannan paus</string>
     <string name="music_break_new_share_75">tre av fyra pauser</string>
     <string name="music_break_new_label">Ny</string>
+    <string name="pref_music_break_skip_ads_title">Hoppa över reklam</string>
+    <string name="pref_music_break_skip_ads_sum">Hoppa över reklam som analysen på synkservern hittat i nedladdade avsnitt, eller spela musik där när reklam byts mot musik</string>
 </resources>

@@ -48,6 +48,7 @@ import de.danoeh.antennapod.playback.base.MediaItemAdapter;
 import de.danoeh.antennapod.playback.base.PlayerStatus;
 import de.danoeh.antennapod.playback.base.RewindAfterPauseUtils;
 import de.danoeh.antennapod.playback.cast.CastPlayerWrapper;
+import de.danoeh.antennapod.playback.service.internal.AdSkipper;
 import de.danoeh.antennapod.playback.service.internal.ExoPlayerUtils;
 import de.danoeh.antennapod.playback.service.internal.MediaLibrarySessionCallback;
 import de.danoeh.antennapod.playback.service.internal.MusicBreak;
@@ -101,6 +102,7 @@ public class Media3PlaybackService extends MediaLibraryService {
     private int playedDurationCountedUntil = -1;
     private SleepTimer sleepTimer;
     private MusicBreak musicBreak;
+    private AdSkipper adSkipper;
     @Nullable
     private LoudnessEnhancer loudnessEnhancer = null;
     private float volumeAdaptionFactor = 1.0f;
@@ -260,6 +262,8 @@ public class Media3PlaybackService extends MediaLibraryService {
             }
         };
         musicBreak = new MusicBreak(this, player, exoPlayer);
+        adSkipper = new AdSkipper(this, player);
+        musicBreak.setAdSkipper(adSkipper);
         player.addListener(playerListener);
         mediaSession = new MediaLibraryService.MediaLibrarySession.Builder(this,
                         new MusicBreakSessionPlayer(player, musicBreak), sessionCallback)
@@ -484,6 +488,9 @@ public class Media3PlaybackService extends MediaLibraryService {
         if (musicBreak != null) {
             musicBreak.release();
         }
+        if (adSkipper != null) {
+            adSkipper.release();
+        }
         if (sleepTimer != null) {
             sleepTimer.stop();
             sleepTimer = null;
@@ -543,6 +550,9 @@ public class Media3PlaybackService extends MediaLibraryService {
                                 }
                                 if (SkipUtils.skipEndingIfNecessary(this, currentPlayable, position, duration, speed)) {
                                     player.seekTo(player.getDuration());
+                                }
+                                if (!musicBreak.isActive()) {
+                                    adSkipper.onPlaybackTick(currentPlayable, musicBreak.replacesAds(currentPlayable));
                                 }
                                 musicBreak.onPlaybackTick(currentPlayable);
                             }

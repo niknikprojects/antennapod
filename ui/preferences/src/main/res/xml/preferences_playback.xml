@@ -140,6 +140,11 @@
                 android:key="prefMusicBreakReplaceAds"
                 android:summary="@string/pref_music_break_replace_ads_sum"
                 android:title="@string/pref_music_break_replace_ads_title"/>
+        <SwitchPreferenceCompat
+                android:defaultValue="true"
+                android:key="prefMusicBreakSkipAds"
+                android:summary="@string/pref_music_break_skip_ads_sum"
+                android:title="@string/pref_music_break_skip_ads_title"/>
         <EditTextPreference
                 android:dependency="prefMusicBreakEnabled"
                 android:key="prefMusicBreakListenBrainzToken"

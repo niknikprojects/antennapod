@@ -33,4 +33,6 @@
     <string name="music_break_new_share_50">every other break</string>
     <string name="music_break_new_share_75">three of four breaks</string>
     <string name="music_break_new_label">New</string>
+    <string name="pref_music_break_skip_ads_title">Skip ads</string>
+    <string name="pref_music_break_skip_ads_sum">Skip ads that the analysis on the sync server found in downloaded episodes, or play music there when ads are replaced with music</string>
 </resources>

@@ -50,9 +50,9 @@ import java.util.regex.Pattern;
  * Without a natural pause the episode stops at the break point. When the episode has chapters or
  * timecodes in the show notes, every topic change gets a track, at the chapter start or in the longest
  * pause near the timecode, and only topics longer than the interval are split further.
- * Chapters that look like ads are replaced by a track. The end of an episode counts
- * as a break when the next episode starts automatically. Pauses are scheduled as player messages,
- * so they happen exactly at the position.
+ * Chapters that look like ads, and ads found by the podcast analysis (see AdSkipper), are replaced
+ * by a track. The end of an episode counts as a break when the next episode starts automatically.
+ * Pauses are scheduled as player messages, so they happen exactly at the position.
  * The music volume is lowered to the measured loudness of the episode (or a typical podcast loudness).
  * The podcast's own volume adaption does not apply to the music, so it can be used to balance the two.
  * Tracks are submitted to ListenBrainz when a user token is set.
@@ -65,6 +65,7 @@ public class MusicBreak {
     private static final long MAX_WINDOW_MS = TimeUnit.MINUTES.toMillis(2);
     private static final long MIN_LEAD_MS = TimeUnit.MINUTES.toMillis(1);
     private static final long CHAPTER_TOLERANCE_MS = 2000;
+    private static final long DETECTED_AD_MARGIN_MS = 5000;
     private static final long NO_SEEK = -1;
     private static final long SCAN_LEAD_MS = 30_000;
     private static final long AD_LOOKAHEAD_MS = 30_000;
@@ -134,6 +135,8 @@ public class MusicBreak {
     private long lastTickPosition = NO_SEEK;
     @Nullable
     private Listener listener;
+    @Nullable
+    private AdSkipper adSkipper;
 
     public interface Listener {
         void onMusicBreakChanged();
@@ -226,17 +229,28 @@ public class MusicBreak {
     }
 
     private boolean handleAdChapters(FeedMedia media, long position) {
+        List<long[]> adRanges = new ArrayList<>();
         List<Chapter> chapters = media.getChapters();
-        if (chapters == null) {
-            return false;
+        if (chapters != null) {
+            for (int i = 0; i < chapters.size(); i++) {
+                if (isAdChapter(chapters.get(i))) {
+                    long end = i + 1 < chapters.size()
+                            ? chapters.get(i + 1).getStart() : episodePlayer.getDuration();
+                    adRanges.add(new long[] {chapters.get(i).getStart(), end});
+                }
+            }
         }
-        for (int i = 0; i < chapters.size(); i++) {
-            Chapter chapter = chapters.get(i);
-            long adStart = chapter.getStart();
-            long adEnd = i + 1 < chapters.size() ? chapters.get(i + 1).getStart() : episodePlayer.getDuration();
-            if (chapter.getTitle() == null || !AD_CHAPTER.matcher(chapter.getTitle()).find()
-                    || adEnd <= adStart || handledAdStarts.contains(adStart)
-                    || position < adStart - AD_LOOKAHEAD_MS || position >= adStart + CHAPTER_TOLERANCE_MS) {
+        int chapterAds = adRanges.size();
+        if (adSkipper != null && MusicBreakPreferences.isSkipAds(context)) {
+            adRanges.addAll(adSkipper.getAds(media.getId()));
+        }
+        for (int i = 0; i < adRanges.size(); i++) {
+            long adStart = adRanges.get(i)[0];
+            long adEnd = adRanges.get(i)[1];
+            // Found ads arrive a moment after the episode started, so they are replaced from anywhere inside
+            long latest = i < chapterAds ? adStart + CHAPTER_TOLERANCE_MS : adEnd - DETECTED_AD_MARGIN_MS;
+            if (adEnd <= adStart || handledAdStarts.contains(adStart)
+                    || position < adStart - AD_LOOKAHEAD_MS || position >= latest) {
                 continue;
             }
             if (position >= adStart) {
@@ -692,6 +706,16 @@ public class MusicBreak {
 
     public void setListener(@Nullable Listener listener) {
         this.listener = listener;
+    }
+
+    /** Ads found by the podcast analysis are replaced like ad chapters. */
+    public void setAdSkipper(@Nullable AdSkipper adSkipper) {
+        this.adSkipper = adSkipper;
+    }
+
+    /** Whether music breaks play a track in the ads of this media instead of skipping them. */
+    public boolean replacesAds(@Nullable FeedMedia media) {
+        return canBreak(media) && MusicBreakPreferences.isReplaceAds(context);
     }
 
     @NonNull

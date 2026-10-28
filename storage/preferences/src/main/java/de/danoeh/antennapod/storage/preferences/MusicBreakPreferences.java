@@ -17,6 +17,7 @@ public class MusicBreakPreferences {
     public static final String PREF_REPLACE_ADS = "prefMusicBreakReplaceAds";
     public static final String PREF_LISTENBRAINZ_TOKEN = "prefMusicBreakListenBrainzToken";
     public static final String PREF_NEW_SHARE = "prefMusicBreakNewShare";
+    public static final String PREF_SKIP_ADS = "prefMusicBreakSkipAds";
     private static final String PREF_PLAYED_TRACKS = "prefMusicBreakPlayedTracks";
 
     public static final String SOURCE_ALL = "all";
@@ -32,6 +33,11 @@ public class MusicBreakPreferences {
 
     public static boolean isReplaceAds(@NonNull Context context) {
         return prefs(context).getBoolean(PREF_REPLACE_ADS, true);
+    }
+
+    /** Skip ads found by the podcast analysis next to the sync server, or replace them when music breaks do. */
+    public static boolean isSkipAds(@NonNull Context context) {
+        return prefs(context).getBoolean(PREF_SKIP_ADS, true);
     }
 
     public static long getIntervalMillis(@NonNull Context context) {
