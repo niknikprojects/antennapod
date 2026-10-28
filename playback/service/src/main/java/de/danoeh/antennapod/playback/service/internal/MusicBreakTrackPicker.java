@@ -35,11 +35,12 @@ import java.util.Set;
 import java.util.concurrent.TimeUnit;
 
 /**
- * Picks tracks from a shuffled queue. A played track waits until a share of the tracks has played since,
- * then goes back among the last ones in the queue, so no track is locked out for long however many tracks
- * are added. Tracks that appeared lately and have not played yet get some of the breaks of their own.
- * When each track last played is remembered while its file is gone, so a track that comes back is
- * neither new nor played again too soon. The state is kept in a file across restarts.
+ * Picks tracks from a shuffled queue. A played track waits until a share of the tracks has played since or
+ * {@link #FORGET_MS} has passed, then goes back among the last ones in the queue, so no track is locked out
+ * for long however many tracks are added. Tracks that appeared lately and have not played yet get some of
+ * the breaks of their own. When each track last played is remembered for a while after its file is gone,
+ * so a track that comes back soon is neither new nor played again too soon. Then it is forgotten, so the
+ * state does not grow. The state is kept in a file across restarts.
  */
 public class MusicBreakTrackPicker {
     private static final String TAG = "MusicBreakTrackPicker";
@@ -47,6 +48,8 @@ public class MusicBreakTrackPicker {
     private static final long MIN_DURATION_MS = 30_000;
     /** How long a track that has not played counts as new after it first appeared. */
     private static final long NEW_MS = TimeUnit.DAYS.toMillis(7);
+    /** Longest wait of a played track, and how long a track whose file is gone is remembered. */
+    private static final long FORGET_MS = TimeUnit.DAYS.toMillis(14);
     /** Played time of a picked track that has not started playing (yet). */
     public static final long NOT_STARTED = -1;
     /** Played time of a track played before the time was recorded. */
@@ -91,8 +94,11 @@ public class MusicBreakTrackPicker {
     /** What is remembered about a track, also while its file is gone. */
     private static class Track {
         long firstSeen;
+        long lastSeen;
         /** Number of the pick that last played it, {@link #NEVER_PICKED}. */
         long pick = NEVER_PICKED;
+        /** When it was last picked, 0 if unknown. */
+        long pickedAt;
         long playedAt = UNKNOWN_TIME;
         @Nullable
         String name;
@@ -131,6 +137,7 @@ public class MusicBreakTrackPicker {
             Track track = deck.tracks.get(picked);
             deck.picks++;
             track.pick = deck.picks;
+            track.pickedAt = System.currentTimeMillis();
             track.playedAt = NOT_STARTED;
             write(context, deck);
             Log.d(TAG, "Picked " + picked + ", " + deck.fresh.size() + " new and " + deck.queue.size()
@@ -252,10 +259,24 @@ public class MusicBreakTrackPicker {
         boolean newEnabled = MusicBreakPreferences.getNewSharePercent(context) > 0;
         Deck saved = read(context);
         Deck deck = saved != null ? saved : carryOver(context, available);
+        for (Iterator<Map.Entry<String, Track>> it = deck.tracks.entrySet().iterator(); it.hasNext(); ) {
+            Map.Entry<String, Track> entry = it.next();
+            Track track = entry.getValue();
+            if (track.pick != NEVER_PICKED && track.pickedAt == 0) {
+                // Played before the time was recorded: the wait starts now
+                track.pickedAt = now;
+            }
+            if (available.contains(entry.getKey()) || track.lastSeen == 0) {
+                track.lastSeen = now;
+            } else if (now - track.lastSeen > FORGET_MS) {
+                it.remove();
+            }
+        }
         for (String uri : available) {
             if (!deck.tracks.containsKey(uri)) {
                 Track track = new Track();
                 track.firstSeen = now;
+                track.lastSeen = now;
                 deck.tracks.put(uri, track);
             }
         }
@@ -281,7 +302,7 @@ public class MusicBreakTrackPicker {
             Track track = deck.tracks.get(uri);
             if (track.pick == NEVER_PICKED) {
                 (newEnabled && isNew(track, now) ? fresh : unplayed).add(uri);
-            } else if (deck.picks - track.pick >= wait) {
+            } else if (deck.picks - track.pick >= wait || now - track.pickedAt >= FORGET_MS) {
                 released.add(uri);
             }
         }
@@ -382,7 +403,9 @@ public class MusicBreakTrackPicker {
             JSONObject entry = tracks.getJSONObject(uri);
             Track track = new Track();
             track.firstSeen = entry.getLong("first");
+            track.lastSeen = entry.optLong("seen");
             track.pick = entry.getLong("pick");
+            track.pickedAt = entry.optLong("picked");
             track.playedAt = entry.getLong("at");
             track.name = entry.has("name") ? entry.getString("name") : null;
             deck.tracks.put(uri, track);
@@ -426,7 +449,9 @@ public class MusicBreakTrackPicker {
                 Track track = entry.getValue();
                 JSONObject json = new JSONObject()
                         .put("first", track.firstSeen)
+                        .put("seen", track.lastSeen)
                         .put("pick", track.pick)
+                        .put("picked", track.pickedAt)
                         .put("at", track.playedAt);
                 if (track.name != null) {
                     json.put("name", track.name);
