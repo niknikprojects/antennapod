@@ -800,8 +800,8 @@ public class MusicBreak {
         if (player != null) {
             handler.post(player::release);
         }
-        EventBus.getDefault().removeStickyEvent(MusicBreakEvent.class);
-        EventBus.getDefault().post(MusicBreakEvent.ended());
+        // Sticky, so a player screen that was stopped during the break still learns that it ended
+        EventBus.getDefault().postSticky(MusicBreakEvent.ended());
         notifyChanged();
         if (!resumeEpisode) {
             return;
