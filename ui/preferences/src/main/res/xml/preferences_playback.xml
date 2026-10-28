@@ -117,6 +117,20 @@
                 android:dependency="prefMusicBreakEnabled"
                 android:key="prefMusicBreakFoldersLauncher"
                 android:title="@string/pref_music_break_folders_title"/>
+        <de.danoeh.antennapod.ui.preferences.preference.MaterialListPreference
+                android:defaultValue="50"
+                android:dependency="prefMusicBreakEnabled"
+                android:entries="@array/music_break_new_share_options"
+                android:entryValues="@array/music_break_new_share_values"
+                android:key="prefMusicBreakNewShare"
+                android:title="@string/pref_music_break_new_share_title"/>
+        <de.danoeh.antennapod.ui.preferences.preference.MaterialListPreference
+                android:defaultValue="70"
+                android:dependency="prefMusicBreakEnabled"
+                android:entries="@array/music_break_repeat_options"
+                android:entryValues="@array/music_break_repeat_values"
+                android:key="prefMusicBreakRepeat"
+                android:title="@string/pref_music_break_repeat_title"/>
         <Preference
                 android:dependency="prefMusicBreakEnabled"
                 android:key="prefMusicBreakPlayedLauncher"

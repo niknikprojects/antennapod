@@ -17,13 +17,25 @@
     <string name="pref_music_break_listenbrainz_sum_off">Inte inställt. Lägg in en användartoken för att skicka lyssningar av musikpausernas låtar</string>
     <string name="pref_music_break_listenbrainz_sum_on">Lyssningar av musikpausernas låtar skickas</string>
     <string name="pref_music_break_listenbrainz_dialog">Användartoken från listenbrainz.org/settings. Lämna tomt för att stänga av.</string>
-    <string name="pref_music_break_played_title">Spelade i omgången</string>
-    <string name="pref_music_break_played_sum">Låtar som spelats sedan alla låtar spelats senast, med tid</string>
+    <string name="pref_music_break_played_title">Spelade nyligen</string>
+    <string name="pref_music_break_played_sum">Låtar som får vänta innan de kan komma igen, med tid</string>
     <string name="pref_music_break_upcoming_title">Kommande</string>
-    <string name="pref_music_break_upcoming_sum">Låtar som är kvar i omgången, i den ordning de kommer</string>
-    <string name="music_break_played_dialog_title">Spelade: %1$d av %2$d</string>
+    <string name="pref_music_break_upcoming_sum">Låtar som kan spelas, i den ordning de kommer</string>
+    <string name="music_break_played_dialog_title">Väntar: %1$d av %2$d</string>
     <string name="music_break_upcoming_dialog_title">Kommande: %1$d av %2$d</string>
     <string name="music_break_round_empty">Inga låtar</string>
     <string name="music_break_not_started">ej spelad än</string>
     <string name="music_break_time_unknown">tidigare</string>
+    <string name="pref_music_break_new_share_title">Nya låtar</string>
+    <string name="pref_music_break_new_share_sum">Låtar som dykt upp de senaste 7 dagarna och inte spelats: %1$s</string>
+    <string name="music_break_new_share_off">ingen förtur</string>
+    <string name="music_break_new_share_25">var fjärde paus</string>
+    <string name="music_break_new_share_50">varannan paus</string>
+    <string name="music_break_new_share_75">tre av fyra pauser</string>
+    <string name="pref_music_break_repeat_title">Upprepning</string>
+    <string name="pref_music_break_repeat_sum">En låt kan komma igen när %1$s av låtarna spelats sedan den spelades</string>
+    <string name="music_break_repeat_50">hälften</string>
+    <string name="music_break_repeat_70" formatted="false">70 %</string>
+    <string name="music_break_repeat_90" formatted="false">90 %</string>
+    <string name="music_break_new_label">Ny</string>
 </resources>

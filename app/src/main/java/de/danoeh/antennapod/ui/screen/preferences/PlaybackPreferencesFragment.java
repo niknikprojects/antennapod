@@ -181,6 +181,13 @@ public class PlaybackPreferencesFragment extends AnimatedPreferenceFragment {
         intervalPref.setSummaryProvider(preference -> res.getString(R.string.pref_music_break_interval_sum,
                 ((ListPreference) preference).getEntry()));
 
+        ListPreference newSharePref = requirePreference(MusicBreakPreferences.PREF_NEW_SHARE);
+        newSharePref.setSummaryProvider(preference -> res.getString(R.string.pref_music_break_new_share_sum,
+                ((ListPreference) preference).getEntry()));
+        ListPreference repeatPref = requirePreference(MusicBreakPreferences.PREF_REPEAT);
+        repeatPref.setSummaryProvider(preference -> res.getString(R.string.pref_music_break_repeat_sum,
+                ((ListPreference) preference).getEntry()));
+
         ListPreference sourcePref = requirePreference(MusicBreakPreferences.PREF_SOURCE);
         sourcePref.setSummaryProvider(ListPreference.SimpleSummaryProvider.getInstance());
         sourcePref.setOnPreferenceChangeListener((preference, newValue) -> {
@@ -238,7 +245,9 @@ public class PlaybackPreferencesFragment extends AnimatedPreferenceFragment {
                         }
                     } else {
                         for (int i = 0; i < round.upcoming.size(); i++) {
-                            lines.add((i + 1) + ". " + round.upcoming.get(i).name);
+                            MusicBreakTrackPicker.Entry entry = round.upcoming.get(i);
+                            lines.add((i + 1) + ". " + (entry.isNew
+                                    ? getString(R.string.music_break_new_label) + " · " : "") + entry.name);
                         }
                     }
                     MaterialAlertDialogBuilder builder = new MaterialAlertDialogBuilder(requireContext())
