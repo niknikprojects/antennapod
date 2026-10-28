@@ -33,16 +33,4 @@
         <item>@string/music_break_new_share_50</item>
         <item>@string/music_break_new_share_75</item>
     </string-array>
-
-    <string-array name="music_break_repeat_values" translatable="false">
-        <item>50</item>
-        <item>70</item>
-        <item>90</item>
-    </string-array>
-
-    <string-array name="music_break_repeat_options">
-        <item>@string/music_break_repeat_50</item>
-        <item>@string/music_break_repeat_70</item>
-        <item>@string/music_break_repeat_90</item>
-    </string-array>
 </resources>

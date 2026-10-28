@@ -50,6 +50,8 @@ public class MusicBreakTrackPicker {
     private static final long NEW_MS = TimeUnit.DAYS.toMillis(7);
     /** Longest wait of a played track, and how long a track whose file is gone is remembered. */
     private static final long FORGET_MS = TimeUnit.DAYS.toMillis(14);
+    /** Percentage of the tracks that has to play before a played track can play again. */
+    private static final int REPEAT_PERCENT = 70;
     /** Played time of a picked track that has not started playing (yet). */
     public static final long NOT_STARTED = -1;
     /** Played time of a track played before the time was recorded. */
@@ -292,7 +294,7 @@ public class MusicBreakTrackPicker {
         }
         Set<String> placed = new HashSet<>(deck.queue);
         placed.addAll(deck.fresh);
-        long wait = waitPicks(context, available.size());
+        long wait = waitPicks(available.size());
         List<String> fresh = new ArrayList<>();
         List<String> released = new ArrayList<>();
         for (String uri : available) {
@@ -350,8 +352,8 @@ public class MusicBreakTrackPicker {
     }
 
     /** Number of picks a played track waits before it can play again. */
-    private static long waitPicks(Context context, int poolSize) {
-        long wait = (long) poolSize * MusicBreakPreferences.getRepeatPercent(context) / 100;
+    private static long waitPicks(int poolSize) {
+        long wait = (long) poolSize * REPEAT_PERCENT / 100;
         return Math.max(1, Math.min(wait, poolSize - 1));
     }
 

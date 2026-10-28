@@ -184,9 +184,6 @@ public class PlaybackPreferencesFragment extends AnimatedPreferenceFragment {
         ListPreference newSharePref = requirePreference(MusicBreakPreferences.PREF_NEW_SHARE);
         newSharePref.setSummaryProvider(preference -> res.getString(R.string.pref_music_break_new_share_sum,
                 ((ListPreference) preference).getEntry()));
-        ListPreference repeatPref = requirePreference(MusicBreakPreferences.PREF_REPEAT);
-        repeatPref.setSummaryProvider(preference -> res.getString(R.string.pref_music_break_repeat_sum,
-                ((ListPreference) preference).getEntry()));
 
         ListPreference sourcePref = requirePreference(MusicBreakPreferences.PREF_SOURCE);
         sourcePref.setSummaryProvider(ListPreference.SimpleSummaryProvider.getInstance());

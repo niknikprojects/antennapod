@@ -17,7 +17,6 @@ public class MusicBreakPreferences {
     public static final String PREF_REPLACE_ADS = "prefMusicBreakReplaceAds";
     public static final String PREF_LISTENBRAINZ_TOKEN = "prefMusicBreakListenBrainzToken";
     public static final String PREF_NEW_SHARE = "prefMusicBreakNewShare";
-    public static final String PREF_REPEAT = "prefMusicBreakRepeat";
     private static final String PREF_PLAYED_TRACKS = "prefMusicBreakPlayedTracks";
 
     public static final String SOURCE_ALL = "all";
@@ -42,11 +41,6 @@ public class MusicBreakPreferences {
     /** Percentage of breaks that play a new track while there are any. */
     public static int getNewSharePercent(@NonNull Context context) {
         return Integer.parseInt(prefs(context).getString(PREF_NEW_SHARE, "50"));
-    }
-
-    /** Percentage of the tracks that has to play before a track can play again. */
-    public static int getRepeatPercent(@NonNull Context context) {
-        return Integer.parseInt(prefs(context).getString(PREF_REPEAT, "70"));
     }
 
     @NonNull

@@ -32,10 +32,5 @@
     <string name="music_break_new_share_25">every fourth break</string>
     <string name="music_break_new_share_50">every other break</string>
     <string name="music_break_new_share_75">three of four breaks</string>
-    <string name="pref_music_break_repeat_title">Repeats</string>
-    <string name="pref_music_break_repeat_sum">A track can play again when %1$s of the tracks have played since it played</string>
-    <string name="music_break_repeat_50">half</string>
-    <string name="music_break_repeat_70" formatted="false">70%</string>
-    <string name="music_break_repeat_90" formatted="false">90%</string>
     <string name="music_break_new_label">New</string>
 </resources>
