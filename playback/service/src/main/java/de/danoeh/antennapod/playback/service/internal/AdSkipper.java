@@ -6,21 +6,16 @@ import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.media3.common.Player;
 import de.danoeh.antennapod.model.feed.FeedMedia;
-import de.danoeh.antennapod.net.common.AntennapodHttpClient;
+import de.danoeh.antennapod.net.common.AdProfiles;
 import de.danoeh.antennapod.storage.preferences.MusicBreakPreferences;
-import de.danoeh.antennapod.storage.preferences.SynchronizationCredentials;
 import io.reactivex.rxjava3.android.schedulers.AndroidSchedulers;
 import io.reactivex.rxjava3.core.Single;
 import io.reactivex.rxjava3.disposables.Disposable;
 import io.reactivex.rxjava3.schedulers.Schedulers;
-import okhttp3.HttpUrl;
-import okhttp3.Request;
-import okhttp3.Response;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
 import java.io.File;
-import java.io.IOException;
 import java.io.RandomAccessFile;
 import java.nio.MappedByteBuffer;
 import java.nio.channels.FileChannel;
@@ -39,11 +34,11 @@ import java.util.concurrent.TimeUnit;
  * episode itself. The server sends an anchor of four frame hashes per block of the episode, so the
  * blocks are found in the downloaded file, which has ads of its own with other lengths. Everything
  * between two blocks is an ad. With music breaks and "replace ads" on, MusicBreak plays a track
- * there instead, otherwise the ad is skipped.
+ * there instead, otherwise the ad is skipped. Profiles are kept on the phone (AdProfiles), so this
+ * works offline once the profile was fetched after a sync.
  */
 public class AdSkipper {
     private static final String TAG = "AdSkipper";
-    private static final int PORT = 8089;
     private static final long RETRY_MS = TimeUnit.MINUTES.toMillis(5);
     private static final int MAX_TRIES = 12;
     private static final long MIN_AD_MS = 3000;
@@ -111,16 +106,19 @@ public class AdSkipper {
     private void load(FeedMedia media) {
         String file = media.getLocalFileUrl();
         String url = media.getDownloadUrl();
-        HttpUrl server = getServer();
-        if (!media.localFileAvailable() || file == null || url == null || server == null) {
+        if (!media.localFileAvailable() || file == null || url == null || AdProfiles.getServer() == null) {
             tries = MAX_TRIES;
             return;
         }
         tries++;
         long loadingId = media.getId();
         loadDisposable = Single.fromCallable(() -> {
-            JSONObject profile = fetchProfile(server, url);
-            return profile == null ? null : findAds(profile, new File(file));
+            // A kept profile works offline, it was fetched after the sync or when last played
+            JSONObject profile = AdProfiles.cached(context, url);
+            if (profile == null) {
+                profile = AdProfiles.fetch(context, url);
+            }
+            return findAds(profile, new File(file));
         })
                 .subscribeOn(Schedulers.io())
                 .observeOn(AndroidSchedulers.mainThread())
@@ -141,28 +139,6 @@ public class AdSkipper {
                     nextTryAt = System.currentTimeMillis() + RETRY_MS;
                     Log.d(TAG, "No ad profile yet for " + url + ": " + error.getMessage());
                 });
-    }
-
-    @Nullable
-    private static HttpUrl getServer() {
-        String host = SynchronizationCredentials.getHosturl();
-        if (host == null || host.isEmpty()) {
-            return null;
-        }
-        HttpUrl url = HttpUrl.parse(host.contains("://") ? host : "https://" + host);
-        return url == null ? null : url.newBuilder().port(PORT).encodedPath("/").build();
-    }
-
-    private static JSONObject fetchProfile(HttpUrl server, String episodeUrl) throws Exception {
-        MessageDigest sha1 = MessageDigest.getInstance("SHA-1");
-        String key = toHex(sha1.digest(episodeUrl.getBytes(StandardCharsets.UTF_8)), 20);
-        Request request = new Request.Builder().url(server.newBuilder().addPathSegment(key + ".json").build()).build();
-        try (Response response = AntennapodHttpClient.getHttpClient().newCall(request).execute()) {
-            if (!response.isSuccessful() || response.body() == null) {
-                throw new IOException("HTTP " + response.code());
-            }
-            return new JSONObject(response.body().string());
-        }
     }
 
     /** Finds the server's blocks of the episode in the local file, the gaps between them are ads. */
@@ -205,14 +181,6 @@ public class AdSkipper {
             found.add(new long[] {frames.toMs(ends[last]), frames.toMs(frames.count)});
         }
         return found;
-    }
-
-    private static String toHex(byte[] bytes, int length) {
-        StringBuilder hex = new StringBuilder();
-        for (int i = 0; i < length; i++) {
-            hex.append(String.format("%02x", bytes[i]));
-        }
-        return hex.toString();
     }
 
     public void release() {

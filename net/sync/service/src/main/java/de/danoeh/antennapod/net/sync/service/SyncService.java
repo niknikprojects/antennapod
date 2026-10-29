@@ -91,6 +91,7 @@ public class SyncService extends Worker {
             clearErrorNotifications();
             EventBus.getDefault().postSticky(new SyncServiceEvent(R.string.sync_status_success));
             SynchronizationSettings.setLastSynchronizationAttemptSuccess(true);
+            AdProfileWorker.enqueue(getApplicationContext());
             return Result.success();
         } catch (Exception e) {
             EventBus.getDefault().postSticky(new SyncServiceEvent(R.string.sync_status_error));
